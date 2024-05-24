@@ -30,7 +30,7 @@ p.add_args(
     ('--opath', p.STR),('--b_percent', {'type': float}))
     
 
-def load_data(normalize = True):
+def load_data(normalize = True,eLinks = -1):
     from files import get_rootfiles
     from coffea.nanoevents import NanoEventsFactory
     import awkward as ak
@@ -43,7 +43,7 @@ def load_data(normalize = True):
     basepath = '/store/group/lpcpfnano/srothman/Nov08_2023_ECON_trainingdata'
     tree = 'FloatingpointThreshold0DummyHistomaxDummynTuple/HGCalTriggerNtuple'
     
-    files = get_rootfiles(hostid, basepath)
+    files = get_rootfiles(hostid, basepath)[0:30]
     
 
     #loop over all the files
@@ -128,30 +128,30 @@ def load_data(normalize = True):
 
         
         
-        mask = (wafer_sim_energy > 0) 
-        indices_passing = np.where(mask)[0]
-        indices_not_passing = np.where(~mask)[0]
+#         mask = (wafer_sim_energy > 0) 
+#         indices_passing = np.where(mask)[0]
+#         indices_not_passing = np.where(~mask)[0]
         
-        if args.b_percent is not None:
-            k = args.b_percent /(1-args.b_percent)
-        else: 
-            k = 3
-        desired_not_passing_count = int(len(indices_passing) / k) 
+#         if args.b_percent is not None:
+#             k = args.b_percent /(1-args.b_percent)
+#         else: 
+#             k = 3
+#         desired_not_passing_count = int(len(indices_passing) / k) 
         
-        selected_not_passing_indices = np.random.choice(indices_not_passing, size=desired_not_passing_count, replace=False)
+#         selected_not_passing_indices = np.random.choice(indices_not_passing, size=desired_not_passing_count, replace=False)
 
-        new_mask_indices = np.concatenate((indices_passing, selected_not_passing_indices))
-        mask = np.zeros_like(wafer_sim_energy, dtype=bool)
-        mask[new_mask_indices] = True
+#         new_mask_indices = np.concatenate((indices_passing, selected_not_passing_indices))
+#         mask = np.zeros_like(wafer_sim_energy, dtype=bool)
+#         mask[new_mask_indices] = True
         
 
-        inputs = inputs[mask]
-        l =l[mask]
-        eta = eta[mask]
-        waferv = waferv[mask]
-        waferu = waferu[mask]
-        wafertype = wafertype[mask]
-        sumCALQ = sumCALQ[mask]
+#         inputs = inputs[mask]
+#         l =l[mask]
+#         eta = eta[mask]
+#         waferv = waferv[mask]
+#         waferu = waferu[mask]
+#         wafertype = wafertype[mask]
+#         sumCALQ = sumCALQ[mask]
         data_list.append([inputs,eta,waferv,waferu,wafertype,sumCALQ,l])
 
 
@@ -202,7 +202,10 @@ def load_data(normalize = True):
 
     # Create the test dataset
     test_dataset = all_dataset.skip(train_size).take(test_size)
-    path = os.path.join(args.opath, f'{eLinks}_eLinks')
+    if eLinks == -1:
+        path = os.path.join(args.opath, f'all_eLinks')
+    else:
+        path = os.path.join(args.opath, f'{eLinks}_eLinks')
     tf.data.experimental.save(train_dataset, path+'_train')
     tf.data.experimental.save(test_dataset, path+'_test')
 
@@ -213,15 +216,13 @@ model_dir = args.opath
 if not os.path.exists(model_dir):
     os.system("mkdir -p "+model_dir)
 
-for eLinks in [5]:#[2,3,4,5]:
+for eLinks in [-1]:#[2,3,4,5]:
      
-    bitsPerOutputLink = [0, 1, 3, 5, 7, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9]
-    
     print(f'Loading {eLinks} eLinks data')
 #     model_dir = os.path.join(args.opath, f'{eLinks}_eLinks')
 #     if not os.path.exists(model_dir):
 #         os.system("mkdir -p " + model_dir)
     
-    load_data()
+    load_data(eLinks = eLinks)
     
 
