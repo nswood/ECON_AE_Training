@@ -25,49 +25,6 @@ from tensorflow.python.framework.convert_to_constants import convert_variables_t
 import matplotlib.pyplot as plt
 import mplhep as hep
 
-def filter_for_flat_distribution(dataset, index_i):
-    """
-    Filters the given TensorFlow dataset to achieve a flat distribution over the specified index i
-    of the second element (assumed to be an 8-dimensional tensor) in each dataset element.
-
-    Args:
-    - dataset (tf.data.Dataset): The input dataset.
-    - index_i (int): The index of the 8-dimensional tensor to achieve a flat distribution over.
-
-    Returns:
-    - tf.data.Dataset: A new dataset filtered to achieve a flat distribution across non-zero bins for index_i.
-    """
-    # Extract the values at index_i from the dataset
-    values_to_balance = np.array(list(dataset.map(lambda features, labels: labels[index_i]).as_numpy_iterator()))
-    
-    # Compute histogram over these values
-    counts, bins = np.histogram(values_to_balance, bins=10)
-    
-    # Identify non-zero bins and determine the minimum count across them for a flat distribution
-    non_zero_bins = counts > 0
-    min_count_in_non_zero_bins = np.min(counts[non_zero_bins])
-    
-    # Determine which indices to include for a flat distribution
-    indices_to_include = []
-    current_counts = np.zeros_like(counts)
-    for i, value in enumerate(values_to_balance):
-        bin_index = np.digitize(value, bins) - 1
-        bin_index = min(bin_index, len(current_counts) - 1)  # Ensure bin_index is within bounds
-        if current_counts[bin_index] < min_count_in_non_zero_bins:
-            indices_to_include.append(i)
-            current_counts[bin_index] += 1
-            
-    # Convert list of indices to a TensorFlow constant for filtering
-    indices_to_include_tf = tf.constant(indices_to_include, dtype=tf.int64)
-    
-    # Filtering function to apply with the dataset's enumerate method
-    def filter_func(index, data):
-        return tf.reduce_any(tf.equal(indices_to_include_tf, index))
-    
-    # Apply filtering to achieve the flat distribution
-    filtered_dataset = dataset.enumerate().filter(filter_func).map(lambda idx, data: data)
-    
-    return filtered_dataset
 
 p = ArgumentParser()
 p.add_args(
@@ -178,9 +135,10 @@ def resample_indices(indices, energy, bin_edges, target_count, bin_index):
 from imblearn.over_sampling import RandomOverSampler
 from imblearn.under_sampling import RandomUnderSampler
 from collections import Counter
-def custom_resample(wafers,c):
+def custom_resample(wafers,c,simE):
     
-    label = (c[:,-1] != 0).astype(int)
+    label = (simE[:,0] != 0).astype(int)
+    print(label)
     n = len(label)
     print(Counter(label))
     indices = np.expand_dims(np.arange(n),axis = -1)
@@ -229,7 +187,6 @@ def load_data(nfiles,batchsize,eLinks = -1, normalize = True):
         v = ak.to_pandas(x.wafer.waferv)
         u = ak.to_pandas(x.wafer.waferu)
         wafertype = ak.to_pandas(x.wafer.wafertype)
-        sumCALQ = ak.to_pandas(x.wafer['CALQ0'])
         wafer_sim_energy = ak.to_pandas(x.wafer.simenergy)
         wafer_energy = ak.to_pandas(x.wafer.energy)
         
@@ -239,7 +196,6 @@ def load_data(nfiles,batchsize,eLinks = -1, normalize = True):
             'v': v.values.flatten(),
             'u': u.values.flatten(),
             'wafertype': wafertype.values.flatten(),
-            'sumCALQ': sumCALQ.values.flatten(),
             'wafer_sim_energy': wafer_sim_energy.values.flatten(),
             'wafer_energy': wafer_energy.values.flatten(),
             'layer': layer.values.flatten()
@@ -254,30 +210,24 @@ def load_data(nfiles,batchsize,eLinks = -1, normalize = True):
             key = f'CALQ{int(i)}'
             data_dict[key] = ak.to_pandas(x.wafer[key]).values.flatten()
             
-
+        
         # Combine all data into a single DataFrame
         combined_df = pd.DataFrame(data_dict, index=eta.index)
-        filtered_df = combined_df
-        
-#         print('Size before pt filtering')
-#         print(len(combined_df))
-        
-#         # Filter the combined DataFrame using the mask filter
-#         filtered_df = combined_df.loc[combined_df.index.get_level_values('entry').isin(mask)]
         
         print('Size after pt filtering')
         print(len(filtered_df))
         # Make eLink filter
         filtered_key_df = key_df[key_df['trigLinks'] == float(eLinks)]
-
+        
+        calq_columns = [f'CALQ{i}' for i in range(64)]
+        combined_df['sumCALQ'] = combined_df[calq_columns].sum(axis=1)
         # Filter based on eLink allocations
-        filtered_df = pd.merge(filtered_df, filtered_key_df[['u', 'v', 'layer']], on=['u', 'v', 'layer'], how='inner')
+        filtered_df = pd.merge(combined_df, filtered_key_df[['u', 'v', 'layer']], on=['u', 'v', 'layer'], how='inner')
         
         print('Size after eLink filtering')
         print(len(filtered_df))
-              
-       
 
+        
         # Process the filtered DataFrame
         filtered_df['eta'] = filtered_df['eta'] / 3.1
         filtered_df['v'] = filtered_df['v'] / 12
@@ -296,6 +246,94 @@ def load_data(nfiles,batchsize,eLinks = -1, normalize = True):
         filtered_df['layer'] = np.squeeze(filtered_df['layer'].to_numpy())
         
         
+def load_data(nfiles,batchsize,eLinks = -1, normalize = True):
+    from files import get_rootfiles
+    from coffea.nanoevents import NanoEventsFactory
+    import awkward as ak
+    import numpy as np
+    ecr = np.vectorize(encode)
+    data_list = []
+    simE_list = []
+
+    # Paths to Simon's dataset
+    hostid = 'cmseos.fnal.gov'
+    basepath = '/store/group/lpcpfnano/srothman/Nov08_2023_ECON_trainingdata'
+    tree = 'FloatingpointThreshold0DummyHistomaxDummynTuple/HGCalTriggerNtuple'
+
+    files = get_rootfiles(hostid, basepath)[0:nfiles]
+
+
+    #loop over all the files
+    for i,file in enumerate(files):
+        x = NanoEventsFactory.from_root(file, treepath=tree).events()
+
+        min_pt = -1  # replace with your minimum value
+        max_pt = 10e10  # replace with your maximum value
+        gen_pt = ak.to_pandas(x.gen.pt).groupby(level=0).mean()
+        mask = (gen_pt['values'] >= min_pt) & (gen_pt['values'] <= max_pt)
+        
+        
+        layer = ak.to_pandas(x.wafer.layer)
+        eta = ak.to_pandas(x.wafer.eta)
+        v = ak.to_pandas(x.wafer.waferv)
+        u = ak.to_pandas(x.wafer.waferu)
+        wafertype = ak.to_pandas(x.wafer.wafertype)
+        wafer_sim_energy = ak.to_pandas(x.wafer.simenergy)
+        wafer_energy = ak.to_pandas(x.wafer.energy)
+        
+        # Combine all DataFrames into a single DataFrame
+        data_dict = {
+            'eta': eta.values.flatten(),
+            'v': v.values.flatten(),
+            'u': u.values.flatten(),
+            'wafertype': wafertype.values.flatten(),
+            'wafer_sim_energy': wafer_sim_energy.values.flatten(),
+            'wafer_energy': wafer_energy.values.flatten(),
+            'layer': layer.values.flatten()
+        }
+
+        # Add additional features AEin1 to AEin63 to the data dictionary
+        key = 'AEin0'
+        data_dict[key] = ak.to_pandas(x.wafer[key]).values.flatten()
+        for i in range(1, 64):
+            key = f'AEin{i}'
+            data_dict[key] = ak.to_pandas(x.wafer[key]).values.flatten()
+            key = f'CALQ{int(i)}'
+            data_dict[key] = ak.to_pandas(x.wafer[key]).values.flatten()
+            
+        
+        # Combine all data into a single DataFrame
+        combined_df = pd.DataFrame(data_dict, index=eta.index)
+        
+        # Make eLink filter
+        filtered_key_df = key_df[key_df['trigLinks'] == float(eLinks)]
+        
+        calq_columns = [f'CALQ{i}' for i in range(1,64)]
+        combined_df['sumCALQ'] = combined_df[calq_columns].sum(axis=1)
+        # Filter based on eLink allocations
+        filtered_df = pd.merge(combined_df, filtered_key_df[['u', 'v', 'layer']], on=['u', 'v', 'layer'], how='inner')
+        
+        print('Size after eLink filtering')
+        print(len(filtered_df))
+
+        
+        # Process the filtered DataFrame
+        filtered_df['eta'] = filtered_df['eta'] / 3.1
+        filtered_df['v'] = filtered_df['v'] / 12
+        filtered_df['u'] = filtered_df['u'] / 12
+
+        # Convert wafertype to one-hot encoding
+        temp = filtered_df['wafertype'].astype(int).to_numpy()
+        wafertype_one_hot = np.zeros((temp.size, 3))
+        wafertype_one_hot[np.arange(temp.size), temp] = 1
+
+        # Assign the processed columns back to the DataFrame
+        filtered_df['wafertype'] = list(wafertype_one_hot)
+        filtered_df['sumCALQ'] = np.squeeze(filtered_df['sumCALQ'].to_numpy())
+        filtered_df['wafer_sim_energy'] = np.squeeze(filtered_df['wafer_sim_energy'].to_numpy())
+        filtered_df['wafer_energy'] = np.squeeze(filtered_df['wafer_energy'].to_numpy())
+        filtered_df['layer'] = np.squeeze(filtered_df['layer'].to_numpy())
+        
 
         inputs = []
         for i in range(64):
@@ -304,9 +342,6 @@ def load_data(nfiles,batchsize,eLinks = -1, normalize = True):
             inputs.append(cur) 
         inputs = np.stack(inputs, axis=-1) #stack all 64 inputs
         inputs = np.reshape(inputs, (-1, 8, 8))
-        
-        
-        
         
         
         layer = filtered_df['layer'].to_numpy()
@@ -319,6 +354,7 @@ def load_data(nfiles,batchsize,eLinks = -1, normalize = True):
         wafer_sim_energy = filtered_df['wafer_sim_energy'].to_numpy()
         wafer_energy = filtered_df['wafer_energy'].to_numpy()
         data_list.append([inputs,eta,v,u,wafertype,sumCALQ,layer])
+        simE_list.append(wafer_sim_energy)
 
     
     inputs_list = []
@@ -346,9 +382,8 @@ def load_data(nfiles,batchsize,eLinks = -1, normalize = True):
     concatenated_wafertype = np.concatenate(wafertype_list)
     concatenated_sumCALQ = np.expand_dims(np.concatenate(sumCALQ_list),axis = -1)
     concatenated_layer = np.expand_dims(np.concatenate(layer_list),axis = -1)
-
+    concatenated_simE = np.expand_dims(np.concatenate(simE_list),axis = -1)
     concatenated_cond = np.hstack([concatenated_eta,concatenated_v,concatenated_u, concatenated_wafertype, concatenated_sumCALQ,concatenated_layer])
-    
     
     events = int(np.min([len(inputs), 1000000]))
     indices = np.random.permutation(events)
@@ -360,14 +395,17 @@ def load_data(nfiles,batchsize,eLinks = -1, normalize = True):
     test_indices = indices[num_selected:]
     wafer_train = concatenated_inputs[train_indices]
     wafer_test = concatenated_inputs[test_indices]
+    
+    simE_train = concatenated_simE[train_indices]
+    simE_test = concatenated_simE[test_indices]
 
     cond_train = concatenated_cond[train_indices]
     cond_test = concatenated_cond[test_indices]
     if args.biased:
         
-        wafer_train,cond_train = custom_resample(wafer_train,cond_train)
+        wafer_train,cond_train = custom_resample(wafer_train,cond_train,simE_train)
         print(wafer_train.shape)
-        wafer_test,cond_test = custom_resample(wafer_test,cond_test)
+        wafer_test,cond_test = custom_resample(wafer_test,cond_test, simE_test)
         
 
     # Create the training dataset
@@ -381,7 +419,6 @@ def load_data(nfiles,batchsize,eLinks = -1, normalize = True):
     train_loader = train_dataset.batch(batchsize).shuffle(buffer_size=num_selected).prefetch(buffer_size=tf.data.AUTOTUNE)
 
     test_loader = test_dataset.batch(batchsize).shuffle(buffer_size=events-num_selected).prefetch(buffer_size=tf.data.AUTOTUNE)
-
 
     return train_loader, test_loader
     
