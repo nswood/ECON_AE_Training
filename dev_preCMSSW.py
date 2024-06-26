@@ -27,7 +27,12 @@ import mplhep as hep
 p = ArgumentParser()
 p.add_args(
     ('--mname', p.STR),
-    ('--mpath', p.STR)
+    
+    ('--mpath', p.STR), 
+    ('--alloc_geom', p.STR)
+   
+    
+    
 )
 
     
@@ -55,6 +60,9 @@ def get_pams():
 
 
 def save_models(encoder,decoder, name, isQK=False):
+
+#     json_string = autoencoder.to_json()
+   
     f'./{model_dir}/{name}.json'
     encoder.save_weights(f'./{model_dir}/encoder_{name}.hdf5')
     decoder.save_weights(f'./{model_dir}/decoder_{name}.hdf5')
@@ -87,8 +95,13 @@ model_dir = args.mpath + '_CMSSW'
 
 if not os.path.exists(model_dir):
     os.system("mkdir -p "+model_dir)
-
-for eLinks in [2,3,4,5]:
+    
+if args.alloc_geom == 'old':
+    all_eLinks = [2,3,4,5]
+elif args.alloc_geom =='new':
+    all_eLinks = [1,2,3,4,5,6,7,8,9,10,11]
+    
+for eLinks in all_eLinks:
      
     bitsPerOutputLink = [0, 1, 3, 5, 7, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9]
     
@@ -136,7 +149,11 @@ for eLinks in [2,3,4,5]:
                 name="conv2d")(x)
 
     x = QActivation(quantized_bits(bits = 8, integer = 1),name = 'act')(x)
+
+    # x = QActivation("quantized_relu(bits=8,integer=1)", name="act")(x)
+
     x = Flatten()(x)
+
     x = QDense(n_encoded, 
                kernel_quantizer=quantized_bits(bits=dense_weightBits,integer=0,keep_negative=1,alpha=1),
                bias_quantizer=quantized_bits(bits=dense_biasBits,integer=0,keep_negative=1,alpha=1),
@@ -144,6 +161,9 @@ for eLinks in [2,3,4,5]:
 
     # Quantizing latent space, 9 bit quantization, 1 bit for integer
     x = QActivation(qkeras.quantized_bits(bits = 9, integer = 1),name = 'latent_quantization')(x)
+
+#     x = concatenate([x,bottom_row],axis=1)
+   
 
     latent = x
     if bitsPerOutput > 0 and maxBitsPerOutput > 0:
@@ -165,6 +185,12 @@ for eLinks in [2,3,4,5]:
     encoder = keras.Model([input_enc], latent, name="encoder")
     decoder = keras.Model([input_dec], recon, name="decoder")
 
+#     cae = Model(
+#         inputs=[input_enc],
+#         outputs=decoder([encoder([input_enc])]),
+#         name="cae"
+#     )
+
     encoder_path = os.path.join(args.mpath,f'model_{eLinks}_eLinks','best-encoder-epoch.tf')
     encoder.load_weights(encoder_path)
     
@@ -174,6 +200,11 @@ for eLinks in [2,3,4,5]:
     loss = telescopeMSE8x8
     
     opt = tf.keras.optimizers.Adam(learning_rate = 0.1,weight_decay = 0.000025)
+#     cae.compile(optimizer=opt, loss=loss)
+#     cae.summary()
 
+    print('loaded model')
     save_models(encoder,decoder,args.mname,isQK = True)
     
+#     save_models(cae,args.mname,isQK = True)
+
