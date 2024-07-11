@@ -189,9 +189,13 @@ def custom_resample(wafers,c,simE):
     # downsample until 1:2::pilup:signal
     signal_percent = 1-args.biased
     ratio = args.biased / signal_percent
-    print(ratio)
-    under = RandomUnderSampler(sampling_strategy=ratio)
-    indices_p, label_p = under.fit_resample(indices_p, label_p)
+    if ratio > 1:
+        ratio = 1 / ratio
+        under = RandomUnderSampler(sampling_strategy=ratio)
+        indices_p, label_p = under.fit_resample(indices_p, label_p)
+    else:
+        under = RandomUnderSampler(sampling_strategy=ratio)
+        indices_p, label_p = under.fit_resample(indices_p, label_p)
     print(Counter(label_p))
     wafers_p = wafers[indices_p[:,0]]
     c_p = c[indices_p[:,0]]
