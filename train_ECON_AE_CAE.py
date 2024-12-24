@@ -28,7 +28,7 @@ from qkeras import QActivation, QConv2D, QDense, quantized_bits
 import matplotlib.pyplot as plt
 
 # Custom utilities (assumes you have these in telescope.py and utils.py)
-from telescope import telescopeMSE8x8
+from utils.telescope import telescopeMSE8x8
 from utils.utils import (ArgumentParser, load_pre_processed_data, mean_mse_loss, 
                    cos_warm_restarts, cosine_annealing, 
                    save_models)

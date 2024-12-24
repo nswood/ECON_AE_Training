@@ -24,7 +24,7 @@ from keras.models import Model
 from qkeras import QActivation, QConv2D, QDense, quantized_bits
 
 # Custom modules
-from telescope import telescopeMSE8x8  # If you need to reference the loss
+from utils.telescope import telescopeMSE8x8  # If you need to reference the loss
 from utils.utils import ArgumentParser, save_CMSSW_models
 import utils.graph as graph  # For writing frozen graphs
 

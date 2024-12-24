@@ -10,6 +10,15 @@ import awkward as ak
 from utils.files import get_rootfiles
 from utils.utils import ArgumentParser, encode
 
+import warnings
+
+# Suppress *all* RuntimeWarnings from coffea.nanoevents.schemas.nanoaod
+warnings.filterwarnings(
+    action="ignore",
+    category=RuntimeWarning,
+    module=r"coffea\.nanoevents\.schemas\.nanoaod"
+)
+
 ##############################################################################
 # Argument Parser
 ##############################################################################
@@ -166,7 +175,7 @@ def process_data(files, save_every_n_files, model_info=-1, normalize=True, model
             data_dict[key_cq] = ak.to_pandas(events.wafer[key_cq]).values.flatten()
 
         combined_df = pd.DataFrame(data_dict, index=eta_pd.index)
-
+        print("Size before eLink or geometry filtering:", len(combined_df))
         # Summation of CALQs
         calq_cols = [f'CALQ{i}' for i in range(1, 64)]
         combined_df['sumCALQ'] = combined_df[calq_cols].sum(axis=1)
@@ -199,11 +208,13 @@ def process_data(files, save_every_n_files, model_info=-1, normalize=True, model
 
         print("Size after eLink or geometry filtering:", len(filtered_df))
 
-        # Normalize some columns
-        filtered_df['eta'] = filtered_df['eta'] / 3.1
-        filtered_df['v'] = filtered_df['v'] / 12
-        filtered_df['u'] = filtered_df['u'] / 12
-        filtered_df['layer'] = (filtered_df['layer'] - 1) / 46
+        # Ensure filtered_df is a copy of the original DataFrame
+        filtered_df = filtered_df.copy()
+
+        # Modify the DataFrame in place using .loc
+        filtered_df.loc[:, 'eta'] = filtered_df['eta'] / 3.1
+        filtered_df.loc[:, 'v'] = filtered_df['v'] / 12
+        filtered_df.loc[:, 'u'] = filtered_df['u'] / 12
 
         # One-hot encode wafertype
         temp = filtered_df['wafertype'].astype(int).to_numpy()
@@ -332,10 +343,17 @@ else:
 for m in all_models:
     if args.model_per_eLink:
         eLinks = m
+        print(f"=============================\n")
+        print(f"Processing data with {m} eLinks\n")
+        print(f"=============================\n")
         bitsPerOutput = bitsPerOutputLink[eLinks]
         model_dir = os.path.join(args.opath, f"data_{eLinks}_eLinks")
     elif args.model_per_bit_config:
         bitsPerOutput = m
+        
+        print(f"=============================\n")
+        print(f"Processing data with {m} bits\n")
+        print(f"=============================\n")
         model_dir = os.path.join(args.opath, f"data_{bitsPerOutput}_bits")
     else:
         model_dir = args.opath  # fallback
