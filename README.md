@@ -1,10 +1,10 @@
 # ECON_QAE_Training
 
 ## Overview
-This repository contains code for training and evaluating Quantized Autoencoders (QAE) for the ECON project. The code is organized into several scripts and utility files to facilitate data processing, model training, and evaluation.
+This repository provides code for training and evaluating Quantized Autoencoders (QAE) as part of the ECON project. The code is organized into various scripts for data processing, model training, and evaluation.
 
 ## Setup
-To set up the environment, use the provided YAML file to create a conda environment:
+To set up the environment, create and activate the Conda environment using the provided YAML file:
 
 ```bash
 conda env create -f environment.yml
@@ -12,56 +12,69 @@ conda activate econ_qae
 ```
 
 ## CAE Description
+The Conditional Autoencoder (CAE) consists of a quantized encoder and an unquantized decoder, with additional conditioning in the latent space for known wafer information. Specifically, for HGCAL wafer encoding, the following conditional variables are used:
+- eta
+- waferu
+- waferv
+- wafertype (one-hot encoded into 3 possible types)
+- sumCALQ
+- layers
 
-The Conditional Autoencoder (CAE) is a quantized encoder & unquantized decoder with conditioning in the latent space for known information. For the HGCAL wafer encoding we have the following conditional information: eta, waferu, waferv, wafertype, sumCALQ, layers. We hot-encode wafertype as there are three possible wafertypes. This gives 8 total conditional variables. In combination with the 16D latent space, this means the decoder takes a 24D latent vector to decode the wafer.
+Altogether, these 8 conditional variables are concatenated with a 16D latent code, resulting in a 24D input to the decoder.
 
-Training the model is done through the train_CAE_simon_data.py file. To process data for CMSSW, you must use the CMSSW processing file dev_CMSSW.py. The processing modifies the model architecture so that CMSSW apply conditioning without producing errors. There is no change of this for model performance, just how we feed it into CMSSW.  
+- Training is performed via `train_CAE_simon_data.py`.
+- CMSSW integration is handled by `dev_CMSSW.py`, which slightly modifies how conditioning is applied (without affecting model performance) to ensure CMSSW compatibility.
 
 ## Generating the Dataset
-To generate the dataset, use the `process_data.py` script. Below is an example command:
+Use the `process_data.py` script to generate or preprocess the dataset. Below is an example command:
 
 ```bash
 python process_data.py --opath test_data_saving --num_files 2 --model_per_eLink --biased 0.90 --save_every_n_files 1 --alloc_geom old
 ```
 
-- `--opath`: Output directory for data saving.
-- `--num_files`: Number of ntuples to load.
+Arguments:
+- `--opath`: Output directory for saved data.
+- `--num_files`: Number of ntuples to preprocess.
 - `--model_per_eLink`: Trains a unique CAE per possible eLink allocation.
-- `--biased`: Resamples the dataset so that 90% of the data is signal and 10% is background.
-- `--save_every_n_files`: Number of ntuples to save per preprocessed file.
+- `--model_per_bit_config`: Trains a unique CAE per possible bit allocation.
+- `--biased`: Resamples the dataset so that n% of the data is signal and (1-n)% is background (specify n as a float).
+- `--save_every_n_files`: Number of ntuples to combine per preprocessed output file.
+- `--alloc_geom`: The allocation geometry (e.g., old).
 
 ## Training the Model
-To run a training session, use the `train_ECON_AE_CAE.py` script. Below is an example command:
+Use the `train_ECON_AE_CAE.py` script to train the model. Below is an example command:
 
 ```bash
 python train_ECON_AE_CAE.py --opath test_new_run --mname test --model_per_eLink --alloc_geom old --data_path test_data_saving --loss tele --optim lion --lr 1e-4 --lr_sched cos --train_dataset_size 2000 --test_dataset_size 1000 --val_dataset_size 1000 --batchsize 128 --num_files 1 --nepochs 10
 ```
 
+Arguments:
 - `--opath`: Output directory for the training run.
 - `--mname`: Model name.
 - `--model_per_eLink`: Trains a unique CAE per possible eLink allocation.
-- `--alloc_geom`: Allocation geometry.
-- `--data_path`: Path to the preprocessed data.
-- `--loss`: Loss function to use.
-- `--optim`: Optimizer to use.
+- `--model_per_bit_config`: Trains a unique CAE per possible bit allocation.
+- `--alloc_geom`: Allocation geometry (e.g., old).
+- `--data_path`: Path to the preprocessed dataset.
+- `--loss`: Loss function (e.g., tele, mse).
+- `--optim`: Optimizer (e.g., lion, adam).
 - `--lr`: Learning rate.
-- `--lr_sched`: Learning rate scheduler.
-- `--train_dataset_size`: Size of the training dataset.
-- `--test_dataset_size`: Size of the test dataset.
-- `--val_dataset_size`: Size of the validation dataset.
-- `--batchsize`: Batch size.
-- `--num_files`: Number of files to use.
-- `--nepochs`: Number of epochs.
+- `--lr_sched`: Learning rate scheduler (e.g., cos, cos_warm_restarts).
+- `--train_dataset_size`: Number of examples in the training dataset.
+- `--test_dataset_size`: Number of examples in the test dataset.
+- `--val_dataset_size`: Number of examples in the validation dataset.
+- `--batchsize`: Training batch size.
+- `--num_files`: Number of preprocessed files to use.
+- `--nepochs`: Number of training epochs.
 
 ## File Descriptions
-- `gen_latent_samples.py`: Script to generate latent samples.
-- `process_data.py`: Script to process raw data and generate datasets.
-- `train_ECON_AE_CAE.py`: Script to train the ECON Autoencoder models.
-- `preprocess_CMSSW.py`: Script to preprocess CMSSW models.
+- `gen_latent_samples.py`: Generates latent samples for analysis.
+- `process_data.py`: Processes raw data and creates datasets.
+- `train_ECON_AE_CAE.py`: Trains the ECON Conditional Autoencoder models.
+- `preprocess_CMSSW.py`: Preprocesses CAE models for CMSSW.
 - `utils/graph.py`: Utility functions for graph operations.
 - `utils/utils.py`: General utility functions.
-- `utils/telescope.py`: Functions related to telescope operations.
-- `utils/files.py`: Functions for file operations.
+- `utils/telescope.py`: Telescope-related helper functions.
+- `utils/files.py`: File I/O helper functions.
 
 ## Additional Information
-For more detailed information on each script and its usage, please refer to the inline comments and docstrings within the code files.
+For more details on each script and its usage, please refer to inline comments and docstrings within the code files. If you encounter any issues, feel free to open an issue or submit a pull request.
