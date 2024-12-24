@@ -1,20 +1,14 @@
 import os
 import numpy as np
 import pandas as pd
-import tensorflow as tf # type: ignore
-
-# For oversampling/undersampling
-from imblearn.over_sampling import RandomOverSampler # type: ignore
-from imblearn.under_sampling import RandomUnderSampler # type: ignore
+import tensorflow as tf
+from imblearn.over_sampling import RandomOverSampler
+from imblearn.under_sampling import RandomUnderSampler
 from collections import Counter
-
-# For reading remote ROOT files
 from coffea.nanoevents import NanoEventsFactory
 import awkward as ak
-
-# Custom modules
-from files import get_rootfiles   # Your function to retrieve file paths
-from utils import ArgumentParser, encode  # encode() if used, otherwise remove
+from utils.files import get_rootfiles
+from utils.utils import ArgumentParser, encode
 
 ##############################################################################
 # Argument Parser

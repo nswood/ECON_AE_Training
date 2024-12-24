@@ -9,26 +9,12 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 from argparse import SUPPRESS, ArgumentParser as _AP
-
-
-# Keras backend for reshape, etc.
 import keras.backend as K
-
-# QKeras utility for saving quantized weights
 from qkeras.utils import model_save_quantized_weights
-
-# For random oversampling/undersampling
 from imblearn.over_sampling import RandomOverSampler
 from imblearn.under_sampling import RandomUnderSampler
 from collections import Counter
-
-# For saving frozen graphs, plotting weights, etc.
-import graph
-
-# A few utility functions from telescope (assuming you use them elsewhere)
-# from telescope import telescopeMSE8x8  # If you need it for get_pams, etc.
-
-# For unique run directories
+import utils.graph as graph
 from uuid import uuid4
 from datetime import datetime
 

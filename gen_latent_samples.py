@@ -3,18 +3,19 @@ import pandas as pd
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
-from qkeras import QActivation,QConv2D,QDense,quantized_bits
+
+from qkeras import QActivation, QConv2D, QDense, quantized_bits
 import qkeras
 from qkeras.utils import model_save_quantized_weights
 from keras.models import Model
 from keras.layers import *
-from telescope import *
-from utils import *
+from utils.telescope import *
+from utils.utils import *
 import inspect
 import json
 import os
 import sys
-import graph
+import utils.graph as graph
 
 import pickle
 from tensorflow.keras.models import model_from_json
@@ -31,14 +32,14 @@ p.add_args(
     
 )
 
-    '''
-    ---------------------------------------------------------------------
-    
-    mpath: path to directory with all model folders (for this case: ~/trained_model) 
-    
-    opath: where you want latent space variables to saved to. Will create a dir for them there
-    ---------------------------------------------------------------------
-    '''    
+'''
+---------------------------------------------------------------------
+
+mpath: path to directory with all model folders (for this case: ~/trained_model) 
+
+opath: where you want latent space variables to saved to. Will create a dir for them there
+---------------------------------------------------------------------
+'''    
 
 
     
