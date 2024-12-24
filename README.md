@@ -53,12 +53,12 @@ Arguments:
 - `--mname`: Model name.
 - `--model_per_eLink`: Trains a unique CAE per possible eLink allocation.
 - `--model_per_bit_config`: Trains a unique CAE per possible bit allocation.
-- `--alloc_geom`: Allocation geometry (e.g., old).
+- `--alloc_geom`: Allocation geometry (old, new).
 - `--data_path`: Path to the preprocessed dataset.
-- `--loss`: Loss function (e.g., tele, mse).
-- `--optim`: Optimizer (e.g., lion, adam).
+- `--loss`: Loss function (tele, mse).
+- `--optim`: Optimizer (lion, adam).
 - `--lr`: Learning rate.
-- `--lr_sched`: Learning rate scheduler (e.g., cos, cos_warm_restarts).
+- `--lr_sched`: Learning rate scheduler (cos, cos_warm_restarts).
 - `--train_dataset_size`: Number of samples in the training dataset.
 - `--test_dataset_size`: Number of samples in the test dataset.
 - `--val_dataset_size`: Number of samples in the validation dataset.
