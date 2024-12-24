@@ -1,9 +1,0 @@
-# Ignore __pycache__ directories
-__pycache__/
-
-# Ignore all __init__.py files
-__init__.py
-
-.gitignore
-.empty
-.ipynb_checkpoints/
