@@ -1,2 +1,0 @@
-model_checkpoint_path: "best-decoder-epoch.tf"
-all_model_checkpoint_paths: "best-decoder-epoch.tf"
