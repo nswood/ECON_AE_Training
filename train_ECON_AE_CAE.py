@@ -81,7 +81,7 @@ p.add_argument('--mpath', type=str, required=False)
 p.add_argument('--mname', type=str, required=True)
 p.add_argument('--model_per_eLink', action='store_true')
 p.add_argument('--model_per_bit_config', action='store_true')
-p.add_argument('--alloc_geom', type=str, required=True)
+p.add_argument('--alloc_geom', type = str, choices=['old', 'new'], default = 'old')
 p.add_argument('--specific_m', type=int, required=False)
 
 # Training parameters
@@ -91,7 +91,7 @@ p.add_argument('--lr', type=float, required=True)
 p.add_argument('--nepochs', type=int, required=True)
 p.add_argument('--batchsize', type=int, required=True)
 p.add_argument('--optim', type=str, choices=['adam', 'lion'], default='lion')
-p.add_argument('--lr_scheduler', type=str, default='cos')
+p.add_argument('--lr_scheduler', type=str, choices=['cos', 'cos_warm_restarts'], default='cos_warm_restarts')
 
 # Dataset parameters
 p.add_argument('--data_path', type=str, required=True)

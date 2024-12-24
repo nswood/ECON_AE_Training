@@ -39,10 +39,10 @@ Arguments:
 - `--model_per_bit_config`: Trains a unique CAE per possible bit allocation.
 - `--biased`: Resamples the dataset so that n% of the data is signal and (1-n)% is background (specify n as a float).
 - `--save_every_n_files`: Number of ntuples to combine per preprocessed output file.
-- `--alloc_geom`: The allocation geometry (e.g., old).
+- `--alloc_geom`: The allocation geometry (old, new).
 
 ## Training the Model
-Use the `train_ECON_AE_CAE.py` script to train the model. Below is an example command:
+Use the `train_ECON_AE_CAE.py` script to train the model. The `train_ECON_AE_CAE.py` script automatically runs `preprocess_CMSSW.py` which generates the necessary files to run the trained CAE in CMSSW. Below is an example command:
 
 ```bash
 python train_ECON_AE_CAE.py --opath test_new_run --mname test --model_per_eLink --alloc_geom old --data_path test_data_saving --loss tele --optim lion --lr 1e-4 --lr_sched cos --train_dataset_size 2000 --test_dataset_size 1000 --val_dataset_size 1000 --batchsize 128 --num_files 1 --nepochs 10
@@ -59,9 +59,9 @@ Arguments:
 - `--optim`: Optimizer (e.g., lion, adam).
 - `--lr`: Learning rate.
 - `--lr_sched`: Learning rate scheduler (e.g., cos, cos_warm_restarts).
-- `--train_dataset_size`: Number of examples in the training dataset.
-- `--test_dataset_size`: Number of examples in the test dataset.
-- `--val_dataset_size`: Number of examples in the validation dataset.
+- `--train_dataset_size`: Number of samples in the training dataset.
+- `--test_dataset_size`: Number of samples in the test dataset.
+- `--val_dataset_size`: Number of samples in the validation dataset.
 - `--batchsize`: Training batch size.
 - `--num_files`: Number of preprocessed files to use.
 - `--nepochs`: Number of training epochs.
