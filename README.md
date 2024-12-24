@@ -23,7 +23,7 @@ The Conditional Autoencoder (CAE) consists of a quantized encoder and an unquant
 Altogether, these 8 conditional variables are concatenated with a 16D latent code, resulting in a 24D input to the decoder.
 
 - Training is performed via `train_CAE_simon_data.py`.
-- CMSSW integration is handled by `dev_CMSSW.py`, which slightly modifies how conditioning is applied (without affecting model performance) to ensure CMSSW compatibility.
+- CMSSW integration is handled by `preprocess_CMSSW.py`, which slightly modifies how conditioning is applied (without affecting model performance) to ensure CMSSW compatibility.
 
 ## Generating the Dataset
 Use the `process_data.py` script to generate or preprocess the dataset. Below is an example command:
