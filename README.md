@@ -73,7 +73,7 @@ Arguments:
 - `preprocess_CMSSW.py`: Preprocesses CAE models for CMSSW.
 - `utils/graph.py`: Utility functions for graph operations.
 - `utils/utils.py`: General utility functions.
-- `utils/telescope.py`: Telescope-related helper functions.
+- `utils/telescope.py`: Telescope loss function.
 - `utils/files.py`: File I/O helper functions.
 
 ## Additional Information
