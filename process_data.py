@@ -339,8 +339,9 @@ elif args.model_per_bit_config:
         all_models = [1, 3, 5, 7, 9]
 else:
     all_models = []
-
+    
 all_files = get_rootfiles('cmsdata.phys.cmu.edu', '/store/user/eertorer/ECONAE/data/')[:args.num_files]
+
 for m in all_models:
     if args.model_per_eLink:
         eLinks = m
