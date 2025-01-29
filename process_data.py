@@ -372,6 +372,11 @@ for m in all_models:
     if not os.path.exists(model_dir):
         os.system("mkdir -p " + model_dir)
 
-    all_files = get_rootfiles('cmsdata.phys.cmu.edu', '/store/user/eertorer/ECONAE/data/')
+    all_files = get_rootfiles("/mnt/scratch/eertorer/ECONAE/data")
     all_files = sorted(all_files)
-    process_data(all_files[:args.num_files], args.save_every_n_files, model_info=m, model_dir=model_dir)
+    process_data(
+    all_files[:args.num_files],
+    args.save_every_n_files,
+    model_info=m,
+    model_dir=model_dir
+    )
