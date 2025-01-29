@@ -22,6 +22,8 @@ from datetime import datetime
 # Learning-Rate Schedulers
 ##############################################################################
 
+
+
 def cos_warm_restarts(epoch, total_epochs, initial_lr):
     """
     Cosine annealing scheduler with warm restarts.
@@ -350,6 +352,73 @@ def load_pre_processed_data(nfiles, batchsize, bits, args):
 
     return train_loader, test_loader, val_loader
 
+
+def load_pre_processed_data_for_hyperband(nfiles, bits, args):
+    """
+    Example data loader. Assumes TFRecord-like datasets are stored under
+    args.data_path with subfolders named 'data_{bits}_eLinks'.
+    
+    Args:
+        nfiles    (int): Number of files to load.
+        batchsize (int): Batch size for training.
+        bits      (int): eLinks or bits parameter for subfolder selection.
+        args    (obj): Object containing dataset paths & sizes (train/val/test).
+    
+    Returns:
+        (train_loader, test_loader, val_loader): tf.data.Dataset objects.
+    """
+    data_folder = os.path.join(args.data_path, f"data_{bits}_eLinks")
+    files = os.listdir(data_folder)
+    
+    # Separate training & testing files
+    train_files = [f for f in files if "train" in f][:nfiles]
+    test_files  = [f for f in files if "test"  in f][:nfiles]
+
+    # Combine all training files
+    train_datasets = []
+    for file in train_files:
+        ds = tf.data.experimental.load(os.path.join(data_folder, file))
+        train_datasets.append(ds)
+    train_dataset = train_datasets[0]
+    for ds in train_datasets[1:]:
+        train_dataset = train_dataset.concatenate(ds)
+
+    # Combine all testing files
+    test_datasets = []
+    for file in test_files:
+        ds = tf.data.experimental.load(os.path.join(data_folder, file))
+        test_datasets.append(ds)
+    test_dataset = test_datasets[0]
+    for ds in test_datasets[1:]:
+        test_dataset = test_dataset.concatenate(ds)
+
+    # Optionally subset
+    total_size = len(train_dataset)
+    train_size = int(0.8 * total_size)
+    val_size = int(0.1 * total_size)
+    test_size = int(0.1 * total_size)
+
+    # Ensure combined train and val size is not larger than the original train_dataset
+    total_train_val_size = train_size + val_size
+    original_train_size = len(train_dataset)
+
+    if total_train_val_size > original_train_size:
+        train_size = int(original_train_size * (train_size / total_train_val_size))
+        val_size = original_train_size - train_size
+
+    train_dataset = train_dataset.take(train_size)
+    val_dataset = train_dataset.take(val_size)
+
+    # Ensure test size is not larger than the original test_dataset
+    original_test_size = len(test_dataset)
+    if test_size > original_test_size:
+        test_size = original_test_size
+
+    test_dataset = test_dataset.take(test_size)
+
+    
+
+    return train_dataset, test_dataset, val_dataset
 ##############################################################################
 # Directory Management
 ##############################################################################

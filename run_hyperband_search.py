@@ -6,6 +6,8 @@ import matplotlib.pyplot as plt
 import tensorflow as tf
 import keras_tuner
 from keras_tuner import Hyperband
+from tensorflow.keras.callbacks import TensorBoard
+from tensorboard.plugins.hparams import api as hp
 
 # If you're using GPU:
 gpus = tf.config.list_physical_devices('GPU')
@@ -25,19 +27,8 @@ from keras.layers import (Layer, Input, Flatten, Dense, ReLU, Reshape,
 from keras.models import Model
 import qkeras
 from qkeras import QActivation, QConv2D, QDense, quantized_bits
-
-##############################################################################
-# Custom utilities (substitute with your actual implementations or imports)
-# from utils.telescope import telescopeMSE8x8
-# from utils.utils import ...
-##############################################################################
-
-def telescopeMSE8x8(y_true, y_pred):
-    """Placeholder for your actual telescope-based MSE."""
-    return tf.reduce_mean(tf.keras.losses.mse(y_true, y_pred))
-
-def mean_mse_loss(y_true, y_pred):
-    return tf.reduce_mean(tf.keras.losses.mse(y_true, y_pred))
+from utils.telescope import telescopeMSE8x8
+from utils.utils import *
 
 ##############################################################################
 # Custom Layers
@@ -117,14 +108,14 @@ def build_cae(hp, args):
     bitsPerOutputLink = [0,1,3,5,7,9,9,9,9,9,9,9,9,9,9]
     eLinks = args.specific_m
     bitsPerOutput = bitsPerOutputLink[eLinks]
-   
+
     # -----------------------------------------------------------
     # 2) Hyperparameters from Keras Tuner
     # -----------------------------------------------------------
     # learning rate
     lr = hp.Float("lr", min_value=1e-5, max_value=1e-2, sampling="log", default=1e-3)
     # loss function
-    loss_type = hp.Choice("loss", ["mse", "tele"], default="mse")
+    loss_type = 'tele'
     # optimizer
     optim_type = hp.Choice("optimizer", ["adam", "lion"], default="adam")
     # weight decay
@@ -203,6 +194,7 @@ def build_cae(hp, args):
     y = ReLU()(y)
     y = Reshape((4, 4, 8))(y)
     y = Conv2DTranspose(1, (3,3), strides=(2,2), padding='valid')(y)
+    # Crop to 8x8
     y = y[:, 0:8, 0:8]
     y = ReLU()(y)
     decoder = keras.Model([input_dec], y, name="decoder")
@@ -237,49 +229,70 @@ def build_cae(hp, args):
 class MyHyperband(Hyperband):
     """
     Subclass Hyperband so we can override run_trial and dynamically set
-    batch_size (among other parameters) in model.fit(...).
+    batch_size (among other parameters) in model.fit(...), and also log
+    each trial's progress to TensorBoard.
     """
-    def run_trial(self, trial, train_inputs, X_train_wafer, val_inputs, X_val_wafer, max_epochs):
+    def run_trial(self, trial, train_dataset, val_dataset, max_epochs, base_log_dir):
         hp = trial.hyperparameters
 
-        # 1) Build the model
+        # 1) Build the model for this trial
         model = self.hypermodel.build(hp)
-
-        # 2) Create callbacks (LR scheduler)
+    
+        # 2) Figure out batch_size from HP
+        batch_size = hp.Choice("batch_size", [64, 128, 256, 512, 1024], default=256)
         init_lr = hp.get("lr")
-        cb = [scheduler_factory(hp, init_lr, max_epochs)]
 
-        # 3) Tuning batch_size
-        #    We define the search space for batch_size here:
-        batch_size = hp.Choice("batch_size", [64, 128, 256, 512,1024], default=256)
+        # 3) Create a subdirectory for this trial's logs
+        trial_log_dir = os.path.join(base_log_dir, f"trial_{trial.trial_id}")
+        os.makedirs(trial_log_dir, exist_ok=True)
 
-        # 4) Train
-        history = model.fit(
-            x=train_inputs,
-            y=X_train_wafer,
-            validation_data=(val_inputs, X_val_wafer),
-            epochs=max_epochs,
-            callbacks=cb,
-            batch_size=batch_size,
-            verbose=0  # or 1 if you want progress output
+        # 4) TensorBoard callback for per-epoch logging
+        tb_callback = tf.keras.callbacks.TensorBoard(
+            log_dir=trial_log_dir,
+            update_freq="epoch"
         )
 
-        # 5) Report the best val_loss to Keras Tuner
-        val_loss = np.min(history.history["val_loss"])
-        self.oracle.update_trial(trial.trial_id, {"val_loss": val_loss})
+        # 5) Train the model, logging each epoch to TensorBoard
+        history = model.fit(
+            train_dataset.batch(batch_size),
+            validation_data=val_dataset.batch(batch_size),
+            epochs=max_epochs,
+            verbose=0,
+            callbacks=[
+                tb_callback,
+                scheduler_factory(hp, init_lr, max_epochs),
+            ]
+        )
 
-        # 6) Save final model for this trial
-        self.save_model(trial.trial_id, model)
+        # 6) Get the best validation loss
+        best_val_loss = min(history.history["val_loss"])
+
+        # 7) Log hyperparameters + final metrics to the HParams plugin
+        with tf.summary.create_file_writer(trial_log_dir).as_default():
+            hp.hparams(hp.values)  # record the used hyperparameters
+            tf.summary.scalar("best_val_loss", best_val_loss, step=max_epochs)
+
+        # 8) Update Keras Tuner with the best validation loss
+        self.oracle.update_trial(trial.trial_id, {"val_loss": best_val_loss})
+
+
+##############################################################################
+# Utility for formatting the data for your model
+##############################################################################
+def format_for_autoencoder(wafer, cond):
+    # cond shape => (batch, 8)
+    # wafer shape => (batch, 8, 8, 1)
+    return (wafer, cond), wafer  # x=(wafer, cond), y=wafer
 
 ##############################################################################
 # Main Tuning Function
 ##############################################################################
 def run_hyperband(args):
     # Create output directory
-    tuner_dir = os.path.join(args.opath, 'hyperband_search')
+    tuner_dir = os.path.join(args.opath, f'hyperband_search_{args.specific_m}')
     os.makedirs(tuner_dir, exist_ok=True)
 
-    max_epochs = 30  # The largest bracket for Hyperband
+    max_epochs = 50  # The largest bracket for Hyperband
 
     # Create our custom tuner
     tuner = MyHyperband(
@@ -292,45 +305,71 @@ def run_hyperband(args):
     )
 
     print('Loading Data...')
-    train_dataset, test_dataset, val_dataset= load_pre_processed_data_for_hyperband(
+    train_dataset, test_dataset, val_dataset = load_pre_processed_data_for_hyperband(
         args.num_files, args.specific_m, args
     )
+
+    # Format the datasets for your autoencoder model
+    train_dataset = train_dataset.map(format_for_autoencoder)
+    val_dataset = val_dataset.map(format_for_autoencoder)
+
+    print('Sample shapes from training dataset:')
+    for batch in train_dataset.take(1):
+        x_batch, y_batch = batch
+        wafer_input, cond_input = x_batch
+        print(f"Wafer shape: {wafer_input.shape}")   # e.g. (batch_size, 8, 8, 1)
+        print(f"Cond shape: {cond_input.shape}")     # e.g. (batch_size, 8)
+        print(f"Target shape: {y_batch.shape}")      # e.g. (batch_size, 8, 8, 1)
     print('Data Loaded!')
 
-    train_inputs = [X_train_wafer, X_train_cond]
-    val_inputs   = [X_val_wafer,   X_val_cond]
-
-    # Instead of tuner.search(...), we call our custom run_trial approach
+    # -------------------------------------------------
+    # Run the Hyperband search
+    # Note: We pass the 'base_log_dir' so each trial
+    # can log to its own subdirectory for TensorBoard.
+    # -------------------------------------------------
+    log_dir = f'./logs/eLink_{args.specific_m}'
     tuner.search(
-        train_inputs,       # passed as positional arguments
-        X_train_wafer,
-        val_inputs,
-        X_val_wafer,
-        max_epochs
+        train_dataset,
+        val_dataset,
+        max_epochs,
+        base_log_dir=log_dir  # used by run_trial
     )
 
     # Retrieve the best hyperparams
-    best_hp = tuner.get_best_hyperparameters(num_trials=1)[0]
+    best_hp = tuner.get_best_hyperparameters(num_trials=50)[0]
     print("Best Hyperparameters:", best_hp.values)
 
     # Build the best model
     best_model = tuner.hypermodel.build(best_hp)
 
-    # Re-train the best model if you want a final fit with more epochs:
+    # -------------------------------------------------
+    # Optional: Re-train the best model in a 'final' run
+    # and log that training to TensorBoard as well.
+    # -------------------------------------------------
+    final_log_dir = os.path.join(log_dir, 'final')
+    os.makedirs(final_log_dir, exist_ok=True)
+
     init_lr = best_hp.get("lr")
-    final_cb = [scheduler_factory(best_hp, init_lr, max_epochs)]
-    batch_size = best_hp.get("batch_size", 32)  # default to 32 if not set
+    final_cb = [
+        scheduler_factory(best_hp, init_lr, max_epochs),
+        TensorBoard(log_dir=final_log_dir, update_freq="epoch")
+    ]
+    batch_size = best_hp.get("batch_size", 32)  # default if not set
     history = best_model.fit(
-        x=train_inputs,
-        y=X_train_wafer,
-        validation_data=(val_inputs, X_val_wafer),
+        train_dataset.batch(batch_size),
+        validation_data=val_dataset.batch(batch_size),
         epochs=max_epochs,
-        batch_size=batch_size,
-        callbacks=final_cb
+        callbacks=final_cb,
+        verbose=1
     )
 
-    # Save final best model
-    best_model.save(os.path.join(tuner_dir, 'best_cae_model.h5'))
+    best_val_loss = np.min(history.history["val_loss"])
+    print(f"Final model after re-training has best_val_loss = {best_val_loss:.4f}")
+
+    # Save the final best model
+    output_model_dir = os.path.join(tuner_dir, f'best_model_eLink_{args.specific_m}')
+    save_models(best_model, output_model_dir, 'best_model', isQK=True)
+    print(f"Best model saved to: {output_model_dir}")
 
 
 ##############################################################################
@@ -344,10 +383,31 @@ def main():
     parser.add_argument('--model_per_eLink', action='store_true')
     parser.add_argument('--model_per_bit_config', action='store_true')
     parser.add_argument('--specific_m', type=int, required=True)
-
+    parser.add_argument('--num_files', type=int, default=1)
+    parser.add_argument('--data_path', type=str, default='data')
     args = parser.parse_args()
-    run_hyperband(args)
 
+    # ---------------------------------------------------------------
+    # Define HParam ranges (for the HP dashboard in TensorBoard)
+    # ---------------------------------------------------------------
+    HP_OPTIMIZER = hp.HParam('optimizer', hp.Discrete(['adam', 'lion']))
+    HP_LR = hp.HParam('lr', hp.RealInterval(1e-5, 1e-2))
+    HP_LR_SCHED = hp.HParam('lr_scheduler', hp.Discrete(['cos', 'cos_warm_restarts', 'step_decay', 'exp_decay']))
+    HP_WEIGHT_DECAY = hp.HParam('weight_decay', hp.RealInterval(1e-6, 1e-2))
+    HP_BATCH_SIZE = hp.HParam('batch_size', hp.Discrete([64, 128, 256, 512, 1024]))
+
+    # Set up a top-level logging directory for all eLink_{args.specific_m} runs
+    top_level_log_dir = f'./logs/eLink_{args.specific_m}'
+    os.makedirs(top_level_log_dir, exist_ok=True)
+
+    # Log the hyperparameter configuration once so the HParams plugin knows
+    with tf.summary.create_file_writer(top_level_log_dir).as_default():
+        hp.hparams_config(
+            hparams=[HP_OPTIMIZER, HP_LR, HP_LR_SCHED, HP_WEIGHT_DECAY, HP_BATCH_SIZE],
+            metrics=[hp.Metric('val_loss', display_name='Validation Loss')],
+        )
+
+    run_hyperband(args)
 
 if __name__ == "__main__":
     main()
