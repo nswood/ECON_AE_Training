@@ -11,7 +11,7 @@ os.environ["PYTHONHASHSEED"] = str(SEED)
 random.seed(SEED)
 np.random.seed(SEED)
 tf.random.set_seed(SEED)
-tf.config.experimental.enable_op_determinism(True)  # optional if TF supports it
+tf.config.experimental.enable_op_determinism()  # optional if TF supports it
 
 
 gpus = tf.config.list_physical_devices('GPU')
