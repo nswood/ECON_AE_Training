@@ -1,10 +1,13 @@
 import fsspec_xrootd as xrdfs
+import os
 
-def get_rootfiles(hostid, path):
-    fs = xrdfs.XRootDFileSystem(hostid = hostid)
-    return get_files_recursive(fs, path,
-                               lambda f : f.endswith(".root"), 
-                               'root://%s/'%hostid)
+def get_rootfiles(path):
+    root_files = []
+    for dirpath, dirnames, filenames in os.walk(path):
+        for f in filenames:
+            if f.endswith(".root"):
+                root_files.append(os.path.join(dirpath, f))
+    return root_files
 
 def get_files_recursive(fs, rootpath, allowed = lambda f : True, prepend = ''):
     pathlist = fs.ls(rootpath)

@@ -363,4 +363,4 @@ for m in all_models:
         os.system("mkdir -p " + model_dir)
 
     # Call save_data to read files, process, and save
-    process_data(get_rootfiles('cmsdata.phys.cmu.edu', '/store/user/eertorer/ECONAE/data/')[:args.num_files], args.save_every_n_files, model_info=m, model_dir = model_dir)
+    process_data(get_rootfiles('/mnt/scratch/eertorer/ECONAE/data')[:args.num_files], args.save_every_n_files, model_info=m, model_dir = model_dir)
