@@ -12,6 +12,15 @@ from utils.utils import ArgumentParser, encode
 
 import warnings
 
+#Setting seed
+SEED = 12345
+os.environ["PYTHONHASHSEED"] = str(SEED)
+random.seed(SEED)
+np.random.seed(SEED)
+tf.random.set_seed(SEED)
+
+
+
 # Suppress *all* RuntimeWarnings from coffea.nanoevents.schemas.nanoaod
 warnings.filterwarnings(
     action="ignore",
@@ -362,5 +371,6 @@ for m in all_models:
     if not os.path.exists(model_dir):
         os.system("mkdir -p " + model_dir)
 
-    # Call save_data to read files, process, and save
-    process_data(get_rootfiles('/mnt/scratch/eertorer/ECONAE/data')[:args.num_files], args.save_every_n_files, model_info=m, model_dir = model_dir)
+    all_files = get_rootfiles('cmsdata.phys.cmu.edu', '/store/user/eertorer/ECONAE/data/')
+    all_files = sorted(all_files)
+    process_data(all_files[:args.num_files], args.save_every_n_files, model_info=m, model_dir=model_dir)
