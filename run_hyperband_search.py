@@ -51,12 +51,12 @@ class keras_floor(Layer):
 ##############################################################################
 # LR Scheduler Factory
 ##############################################################################
-def scheduler_factory(hp, initial_lr, max_epochs):
+def scheduler_factory(cur_hp, initial_lr, max_epochs):
     """
     Returns a Keras LearningRateScheduler callback that adjusts LR each epoch
     based on a chosen scheduler hyperparameter.
     """
-    lr_sched = hp.Choice("lr_scheduler", 
+    lr_sched = cur_hp.Choice("lr_scheduler", 
                          ["cos", "cos_warm_restarts", "step_decay", "exp_decay"],
                          default="cos")
 
@@ -95,7 +95,7 @@ def scheduler_factory(hp, initial_lr, max_epochs):
 ##############################################################################
 # Build & Compile the CAE
 ##############################################################################
-def build_cae(hp, args):
+def build_cae(cur_hp, args):
     """
     Build and compile the CAE model using hyperparameters from Keras Tuner,
     plus a *fixed* bitsPerOutput from args.
@@ -113,13 +113,13 @@ def build_cae(hp, args):
     # 2) Hyperparameters from Keras Tuner
     # -----------------------------------------------------------
     # learning rate
-    lr = hp.Float("lr", min_value=1e-5, max_value=1e-2, sampling="log", default=1e-3)
+    lr = cur_hp.Float("lr", min_value=1e-5, max_value=1e-2, sampling="log", default=1e-3)
     # loss function
     loss_type = 'tele'
     # optimizer
-    optim_type = hp.Choice("optimizer", ["adam", "lion"], default="adam")
+    optim_type = cur_hp.Choice("optimizer", ["adam", "lion"], default="adam")
     # weight decay
-    weight_decay = hp.Float("weight_decay", min_value=1e-6, max_value=1e-2,
+    weight_decay = cur_hp.Float("weight_decay", min_value=1e-6, max_value=1e-2,
                             sampling="log", default=1e-4)
     # n_encoded (just an example of an architecture hyperparam you can tune)
     n_encoded = 16
@@ -233,14 +233,14 @@ class MyHyperband(Hyperband):
     each trial's progress to TensorBoard.
     """
     def run_trial(self, trial, train_dataset, val_dataset, max_epochs, base_log_dir):
-        hp = trial.hyperparameters
+        cur_hp = trial.hyperparameters
 
         # 1) Build the model for this trial
-        model = self.hypermodel.build(hp)
+        model = self.hypermodel.build(cur_hp)
     
         # 2) Figure out batch_size from HP
-        batch_size = hp.Choice("batch_size", [64, 128, 256, 512, 1024], default=256)
-        init_lr = hp.get("lr")
+        batch_size = cur_hp.Choice("batch_size", [64, 128, 256, 512, 1024], default=256)
+        init_lr = cur_hp.get("lr")
 
         # 3) Create a subdirectory for this trial's logs
         trial_log_dir = os.path.join(base_log_dir, f"trial_{trial.trial_id}")
@@ -252,25 +252,26 @@ class MyHyperband(Hyperband):
             update_freq="epoch"
         )
 
-        # 5) Train the model, logging each epoch to TensorBoard
-        history = model.fit(
-            train_dataset.batch(batch_size),
-            validation_data=val_dataset.batch(batch_size),
-            epochs=max_epochs,
-            verbose=0,
-            callbacks=[
-                tb_callback,
-                scheduler_factory(hp, init_lr, max_epochs),
-            ]
-        )
-
-        # 6) Get the best validation loss
-        best_val_loss = min(history.history["val_loss"])
-
+        
         # 7) Log hyperparameters + final metrics to the HParams plugin
         with tf.summary.create_file_writer(trial_log_dir).as_default():
-            hp.hparams(hp.values)  # record the used hyperparameters
-            tf.summary.scalar("best_val_loss", best_val_loss, step=max_epochs)
+            # 5) Train the model, logging each epoch to TensorBoard
+            history = model.fit(
+                train_dataset.batch(batch_size),
+                validation_data=val_dataset.batch(batch_size),
+                epochs=max_epochs,
+                verbose=0,
+                callbacks=[
+                    tb_callback,
+                    scheduler_factory(cur_hp, init_lr, max_epochs),
+                ]
+            )
+
+            # 6) Get the best validation loss
+            best_val_loss = min(history.history["val_loss"])
+
+            hp.hparams(cur_hp.values)  # record the used hyperparameters
+            tf.summary.scalar("best_val_loss", best_val_loss, step=1)
 
         # 8) Update Keras Tuner with the best validation loss
         self.oracle.update_trial(trial.trial_id, {"val_loss": best_val_loss})
@@ -347,7 +348,7 @@ def run_hyperband(args):
     # and log that training to TensorBoard as well.
     # -------------------------------------------------
     final_log_dir = os.path.join(log_dir, 'final')
-    os.makedirs(final_log_dir, exist_ok=True)
+    os.makedirs(final_log_dir, exist_ok=True)   
 
     init_lr = best_hp.get("lr")
     final_cb = [
