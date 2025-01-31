@@ -32,8 +32,9 @@ p.add_args(
     ('--model_per_bit_config', p.STORE_TRUE),
     ('--biased', {'type': float}),
     ('--save_every_n_files', p.INT),
-    ('--alloc_geom', p.STR)
-    ('--seed', p.INT)
+    ('--alloc_geom', p.STR),
+    ('--seed', p.INT),
+    ('--use_local', p.STORE_TRUE)
 )
 args = p.parse_args()
 
@@ -377,8 +378,12 @@ for m in all_models:
     if not os.path.exists(model_dir):
         os.system("mkdir -p " + model_dir)
 
-    all_files = get_rootfiles("/mnt/scratch/eertorer/ECONAE/data")
-    all_files = sorted(all_files)
+    all_files = get_rootfiles(
+    '/store/user/eertorer/ECONAE/data/' if not args.use_local else '/mnt/scratch/eertorer/ECONAE/data', 
+    use_local=args.use_local,
+    hostid='cmsdata.phys.cmu.edu'
+)
+all_files = sorted(all_files)
     process_data(
     all_files[:args.num_files],
     args.save_every_n_files,
