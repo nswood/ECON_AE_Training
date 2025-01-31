@@ -109,8 +109,21 @@ p.add_argument('--num_files', type=int, required=True)
 p.add_argument('--train_dataset_size', type=int, default=500000)
 p.add_argument('--val_dataset_size', type=int, default=100000)
 p.add_argument('--test_dataset_size', type=int, default=100000)
+p.add_argument('--seed', type=int, required=False, default=None)
 
 args = p.parse_args()
+
+if args.seed is not None:
+    SEED = args.seed
+    os.environ["PYTHONHASHSEED"] = str(SEED)
+    random.seed(SEED)
+    np.random.seed(SEED)
+    tf.random.set_seed(SEED)
+    # If TF >= 2.11 and you want determinism:
+    tf.config.experimental.enable_op_determinism()
+    
+    print(f"Training with random seed: {SEED}")
+
 
 ################################################################
 # Create and Verify Output Directory
