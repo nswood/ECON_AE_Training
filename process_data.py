@@ -10,15 +10,7 @@ from coffea.nanoevents import NanoEventsFactory
 import awkward as ak
 from utils.files import get_rootfiles
 from utils.utils import ArgumentParser, encode
-
 import warnings
-
-#Setting seed
-SEED = 12345
-os.environ["PYTHONHASHSEED"] = str(SEED)
-random.seed(SEED)
-np.random.seed(SEED)
-tf.random.set_seed(SEED)
 
 
 
@@ -41,8 +33,21 @@ p.add_args(
     ('--biased', {'type': float}),
     ('--save_every_n_files', p.INT),
     ('--alloc_geom', p.STR)
+    ('--seed', p.INT)
 )
 args = p.parse_args()
+
+if args.seed is not None:
+
+    SEED = args.seed
+    os.environ["PYTHONHASHSEED"] = str(SEED)
+    random.seed(SEED)
+    np.random.seed(SEED)
+    tf.random.set_seed(SEED)
+
+    print(f"Setting random seed: {SEED}")
+
+
 
 ##############################################################################
 # Global Configuration
