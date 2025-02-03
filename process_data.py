@@ -382,8 +382,10 @@ for m in all_models:
     '/store/user/eertorer/ECONAE/data/' if not args.use_local else '/mnt/scratch/eertorer/ECONAE/data', 
     use_local=args.use_local,
     hostid='cmsdata.phys.cmu.edu'
-)
-all_files = sorted(all_files)
+    )
+    
+    all_files = sorted(all_files)
+    
     process_data(
     all_files[:args.num_files],
     args.save_every_n_files,
