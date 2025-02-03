@@ -40,7 +40,7 @@ Arguments:
 - `--biased`: Resamples the dataset so that n% of the data is signal and (1-n)% is background (specify n as a float).
 - `--save_every_n_files`: Number of ntuples to combine per preprocessed output file.
 - `--alloc_geom`: The allocation geometry (old, new).
-- `--use_local`: If passed, read .root files from local directory (for CMU Rogue01 GPU Cluster Only). If not passed, it uses XRootD to get the data from Tier 3.
+- `--use_local`: If passed, read .root files from local directory (for CMU Rogue01 GPU Cluster only). If not passed, it uses XRootD to get the data from Tier 3.
 - `--seed`: If provided, enforces a fixed random seed for consistent shuffling and splitting (reproducible train/test splits).
 
 ## Training the Model
