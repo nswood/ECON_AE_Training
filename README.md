@@ -29,7 +29,7 @@ Altogether, these 8 conditional variables are concatenated with a 16D latent cod
 Use the `process_data.py` script to generate or preprocess the dataset. Below is an example command:
 
 ```bash
-python process_data.py --opath test_data_saving --num_files 2 --model_per_eLink --biased 0.90 --save_every_n_files 1 --alloc_geom old
+python process_data.py --opath test_data_saving --num_files 2 --model_per_eLink --biased 0.90 --save_every_n_files 1 --alloc_geom old --use_local --seed 12345
 ```
 
 Arguments:
@@ -40,12 +40,14 @@ Arguments:
 - `--biased`: Resamples the dataset so that n% of the data is signal and (1-n)% is background (specify n as a float).
 - `--save_every_n_files`: Number of ntuples to combine per preprocessed output file.
 - `--alloc_geom`: The allocation geometry (old, new).
+- `--use_local`: If passed, read .root files from local directory (for CMU Rogue01 GPU Cluster Only). If not passed, it uses XRootD to get the data from Tier 3.
+- `--seed`: If provided, enforces a fixed random seed for consistent shuffling and splitting (reproducible train/test splits).
 
 ## Training the Model
 Use the `train_ECON_AE_CAE.py` script to train the model. The `train_ECON_AE_CAE.py` script automatically runs `preprocess_CMSSW.py` which generates the necessary files to run the trained CAE in CMSSW. Below is an example command:
 
 ```bash
-python train_ECON_AE_CAE.py --opath test_new_run --mname test --model_per_eLink --alloc_geom old --data_path test_data_saving --loss tele --optim lion --lr 1e-4 --lr_sched cos --train_dataset_size 2000 --test_dataset_size 1000 --val_dataset_size 1000 --batchsize 128 --num_files 1 --nepochs 10
+python train_ECON_AE_CAE.py --opath test_new_run --mname test --model_per_eLink --alloc_geom old --data_path test_data_saving --loss tele --optim lion --lr 1e-4 --lr_sched cos --train_dataset_size 2000 --test_dataset_size 1000 --val_dataset_size 1000 --batchsize 128 --num_files 1 --nepochs 10 --seed 12345
 ```
 
 Arguments:
@@ -65,6 +67,7 @@ Arguments:
 - `--batchsize`: Training batch size.
 - `--num_files`: Number of preprocessed files to use.
 - `--nepochs`: Number of training epochs.
+- `--seed`: If passed, fixes the random seed for weight initialization, data ordering, etc., to make results reproducible across machines.
 
 ## File Descriptions
 - `gen_latent_samples.py`: Generates latent samples for analysis.
