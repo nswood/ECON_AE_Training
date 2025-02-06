@@ -8,6 +8,15 @@ import keras_tuner
 from keras_tuner import Hyperband
 from tensorflow.keras.callbacks import TensorBoard
 from tensorboard.plugins.hparams import api as hp
+import argparse
+import csv
+
+
+class PrintRegularizationLossesPerBatch(tf.keras.callbacks.Callback):
+    def on_train_batch_end(self, batch, logs=None):
+        regularization_losses = sum(self.model.losses)
+        print(f"Batch {batch + 1}: Regularization losses = {regularization_losses}")
+
 
 # If you're using GPU:
 gpus = tf.config.list_physical_devices('GPU')
@@ -30,23 +39,6 @@ from qkeras import QActivation, QConv2D, QDense, quantized_bits
 from utils.telescope import telescopeMSE8x8
 from utils.utils import *
 
-##############################################################################
-# Custom Layers
-##############################################################################
-class keras_pad(Layer):
-    def call(self, x):
-        padding = tf.constant([[0, 0], [0, 1], [0, 1], [0, 0]])
-        return tf.pad(x, padding, mode='CONSTANT', constant_values=0)
-
-class keras_minimum(Layer):
-    def call(self, x, sat_val=1):
-        return tf.minimum(x, sat_val)
-
-class keras_floor(Layer):
-    def call(self, x):
-        if isinstance(x, tf.SparseTensor):
-            x = tf.sparse.to_dense(x)
-        return tf.math.floor(x)
 
 ##############################################################################
 # LR Scheduler Factory
@@ -74,7 +66,7 @@ def scheduler_factory(cur_hp, initial_lr, max_epochs):
             cycle = epoch % T
             cos_inner = np.pi * cycle / T
             return initial_lr / 2 * (np.cos(cos_inner) + 1.0)
-        return keras.callbacks.LearningRateScheduler(cos_warm, verbose=0)
+        return keras.callbacks.LearningRateScheduler(cos_warm, verbose=0) 
 
     elif lr_sched == "step_decay":
         # e.g. reduce LR by 10x every 10 epochs
@@ -121,90 +113,13 @@ def build_cae(cur_hp, args):
     # weight decay
     weight_decay = cur_hp.Float("weight_decay", min_value=1e-6, max_value=1e-2,
                             sampling="log", default=1e-4)
-    # n_encoded (just an example of an architecture hyperparam you can tune)
-    n_encoded = 16
+    
+    if args.orthogonal_regularization_factor < 0:
+        cur_orthogonal_regularization_factor = cur_hp.Float("orthogonal_regularization_factor", min_value=1e-4, max_value=1.0, default=0.01, sampling="log")
+        cae = build_cae_model(bitsPerOutput, cur_orthogonal_regularization_factor)
 
-    # -----------------------------------------------------------
-    # 3) Bits logic from your code
-    # -----------------------------------------------------------
-    nIntegerBits = 1
-    nDecimalBits = bitsPerOutput - nIntegerBits
-    outputSaturationValue = (1 << nIntegerBits) - 1./(1 << nDecimalBits)
-    maxBitsPerOutput = 9
-    outputMaxIntSize = 1 if (bitsPerOutput <= 0) else (1 << nDecimalBits)
-
-    # Additional fixed settings
-    n_kernels = 8
-    conv_weightBits = 6
-    conv_biasBits   = 6
-    dense_weightBits = 6
-    dense_biasBits   = 6
-    encodedBits = 9
-    CNN_kernel_size = 3
-
-    # -----------------------------------------------------------
-    # 4) Build Encoder
-    # -----------------------------------------------------------
-    input_enc = Input(shape=(8, 8, 1), name='Wafer')
-    cond      = Input(shape=(8,), name='Cond')
-
-    x = QActivation(quantized_bits(bits=8, integer=1), name='input_quantization')(input_enc)
-    x = keras_pad()(x)
-    x = QConv2D(
-        n_kernels,
-        CNN_kernel_size, 
-        strides=2, 
-        padding='valid',
-        kernel_quantizer=quantized_bits(bits=conv_weightBits, integer=0, keep_negative=1, alpha=1),
-        bias_quantizer=quantized_bits(bits=conv_biasBits,   integer=0, keep_negative=1, alpha=1),
-        name="conv2d"
-    )(x)
-    x = QActivation(quantized_bits(bits=8, integer=1), name='act')(x)
-    x = Flatten()(x)
-    x = QDense(
-        n_encoded,
-        kernel_quantizer=quantized_bits(bits=dense_weightBits, integer=0, keep_negative=1, alpha=1),
-        bias_quantizer=quantized_bits(bits=dense_biasBits,     integer=0, keep_negative=1, alpha=1),
-        name="dense"
-    )(x)
-
-    latent = QActivation(
-        qkeras.quantized_bits(bits=encodedBits, integer=nIntegerBits),
-        name='latent_quantization'
-    )(x)
-
-    # If bits are allocated, rescale + saturate
-    if bitsPerOutput > 0 and maxBitsPerOutput > 0:
-        latent = keras_floor()(latent * outputMaxIntSize)
-        latent = keras_minimum()(latent / outputMaxIntSize, sat_val=outputSaturationValue)
-
-    # Concatenate condition
-    latent = concatenate([latent, cond], axis=1)
-    encoder = keras.Model([input_enc, cond], latent, name="encoder")
-
-    # -----------------------------------------------------------
-    # 5) Build Decoder
-    # -----------------------------------------------------------
-    input_dec = Input(shape=(24,))
-    y = Dense(24)(input_dec)
-    y = ReLU()(y)
-    y = Dense(64)(y)
-    y = ReLU()(y)
-    y = Dense(128)(y)
-    y = ReLU()(y)
-    y = Reshape((4, 4, 8))(y)
-    y = Conv2DTranspose(1, (3,3), strides=(2,2), padding='valid')(y)
-    # Crop to 8x8
-    y = y[:, 0:8, 0:8]
-    y = ReLU()(y)
-    decoder = keras.Model([input_dec], y, name="decoder")
-
-    # Full CAE
-    cae = Model(
-        inputs=[input_enc, cond],
-        outputs=decoder([encoder([input_enc, cond])]),
-        name="cae"
-    )
+    else:
+        cae = build_cae_model(bitsPerOutput, args.orthogonal_regularization_factor)
 
     # -----------------------------------------------------------
     # 6) Compile with chosen loss & optimizer
@@ -219,7 +134,7 @@ def build_cae(cur_hp, args):
     else:
         # Lion requires TF >= 2.12 or a separate add-on
         optimizer = tf.keras.optimizers.Lion(learning_rate=lr, weight_decay=weight_decay)
-
+   
     cae.compile(optimizer=optimizer, loss=loss_fn)
     return cae
 
@@ -251,11 +166,12 @@ class MyHyperband(Hyperband):
             log_dir=trial_log_dir,
             update_freq="epoch"
         )
-
         
         # 7) Log hyperparameters + final metrics to the HParams plugin
         with tf.summary.create_file_writer(trial_log_dir).as_default():
             # 5) Train the model, logging each epoch to TensorBoard
+            
+
             history = model.fit(
                 train_dataset.batch(batch_size),
                 validation_data=val_dataset.batch(batch_size),
@@ -266,6 +182,8 @@ class MyHyperband(Hyperband):
                     scheduler_factory(cur_hp, init_lr, max_epochs),
                 ]
             )
+
+            print(history.history.keys())  
 
             # 6) Get the best validation loss
             best_val_loss = min(history.history["val_loss"])
@@ -302,7 +220,8 @@ def run_hyperband(args):
         max_epochs=max_epochs,
         factor=3,
         directory=tuner_dir,
-        project_name='cae_project'
+        project_name='cae_project',
+        overwrite=False
     )
 
     print('Loading Data...')
@@ -328,17 +247,22 @@ def run_hyperband(args):
     # Note: We pass the 'base_log_dir' so each trial
     # can log to its own subdirectory for TensorBoard.
     # -------------------------------------------------
-    log_dir = f'./logs/eLink_{args.specific_m}'
-    tuner.search(
-        train_dataset,
-        val_dataset,
-        max_epochs,
-        base_log_dir=log_dir  # used by run_trial
-    )
-
+    log_dir = f'./{args.base_logdir}/eLink_{args.specific_m}'
+    if not args.skip_to_final_model:
+        tuner.search(
+            train_dataset,
+            val_dataset,
+            max_epochs,
+            base_log_dir=log_dir  # used by run_trial
+        )
+    else:
+        print('Skipping to final model training...')
+    
     # Retrieve the best hyperparams
-    best_hp = tuner.get_best_hyperparameters(num_trials=50)[0]
+    best_hp = tuner.get_best_hyperparameters(num_trials=args.num_trials)[0]
     print("Best Hyperparameters:", best_hp.values)
+    print('Best loss', tuner.oracle.get_best_trials(1)[0].score)
+    lowest_loss = tuner.oracle.get_best_trials(1)[0].score
 
     # Build the best model
     best_model = tuner.hypermodel.build(best_hp)
@@ -348,27 +272,68 @@ def run_hyperband(args):
     # and log that training to TensorBoard as well.
     # -------------------------------------------------
     final_log_dir = os.path.join(log_dir, 'final')
-    os.makedirs(final_log_dir, exist_ok=True)   
+    os.makedirs(final_log_dir, exist_ok=True)
 
-    init_lr = best_hp.get("lr")
-    final_cb = [
-        scheduler_factory(best_hp, init_lr, max_epochs),
-        TensorBoard(log_dir=final_log_dir, update_freq="epoch")
-    ]
-    batch_size = best_hp.get("batch_size", 32)  # default if not set
-    history = best_model.fit(
-        train_dataset.batch(batch_size),
-        validation_data=val_dataset.batch(batch_size),
-        epochs=max_epochs,
-        callbacks=final_cb,
-        verbose=1
-    )
+    best_val_loss = float('inf')
+    best_model_weights = None
 
-    best_val_loss = np.min(history.history["val_loss"])
-    print(f"Final model after re-training has best_val_loss = {best_val_loss:.4f}")
+    # Save hyperparameters
+    with open(os.path.join(final_log_dir, 'best_hyperparameters.csv'), 'w') as f:
+        writer = csv.writer(f)
+        for key, value in best_hp.values.items():
+            writer.writerow([key, value])
+        writer.writerow(['best_val_loss', lowest_loss])
+    
+    # Train over 20 initial seeds
+    performance_records = []
+    max_epochs = 100
+    with open(os.path.join(final_log_dir, 'performance_records.csv'), 'w') as f:
+        writer = csv.writer(f)
+        writer.writerow(['Seed', 'Validation Loss'])
+
+        for seed in range(20):
+            # Rebuild the model for each seed to ensure re-initialization
+            best_model = tuner.hypermodel.build(best_hp)
+            print(f"Training with seed {seed}...")
+            tf.keras.utils.set_random_seed(seed)
+
+            init_lr = best_hp.get("lr")
+            final_cb = [
+                scheduler_factory(best_hp, init_lr, max_epochs),
+                TensorBoard(log_dir=os.path.join(final_log_dir, f'seed_{seed}'), update_freq="epoch")
+            ]
+            batch_size = best_hp.get("batch_size")
+            history = best_model.fit(
+                train_dataset.batch(batch_size),
+                validation_data=val_dataset.batch(batch_size),
+                epochs=max_epochs,
+                callbacks=final_cb,
+                verbose=1
+            )
+
+            seed_val_loss = np.min(history.history["val_loss"])
+            performance_records.append([seed, seed_val_loss])
+            print(f"Seed {seed} model has val_loss = {seed_val_loss:.4f}")
+
+            # Save the best model weights
+            if seed_val_loss < best_val_loss:
+                best_val_loss = seed_val_loss
+                best_model_weights = best_model.get_weights()
+
+            # Write the current seed's performance to the CSV file
+            writer.writerow([seed, seed_val_loss])
+
+    # Save the best model
+    if best_model_weights is not None:
+        best_model.set_weights(best_model_weights)
+        output_model_dir = os.path.join(tuner_dir, f'best_model_eLink_{args.specific_m}')
+        os.makedirs(output_model_dir, exist_ok=True)
+        save_models(best_model, output_model_dir, 'best_model', isQK=True)
+        print(f"Best model saved to: {output_model_dir}")
 
     # Save the final best model
     output_model_dir = os.path.join(tuner_dir, f'best_model_eLink_{args.specific_m}')
+    os.makedirs(output_model_dir, exist_ok=True)
     save_models(best_model, output_model_dir, 'best_model', isQK=True)
     print(f"Best model saved to: {output_model_dir}")
 
@@ -377,7 +342,7 @@ def run_hyperband(args):
 # Main
 ##############################################################################
 def main():
-    import argparse
+    
     parser = argparse.ArgumentParser()
     parser.add_argument('--opath', type=str, required=True, help="Output path")
     parser.add_argument('--mname', type=str, required=True, help="Model name")
@@ -386,6 +351,11 @@ def main():
     parser.add_argument('--specific_m', type=int, required=True)
     parser.add_argument('--num_files', type=int, default=1)
     parser.add_argument('--data_path', type=str, default='data')
+    parser.add_argument('--num_trials', type=int, default=50)
+    parser.add_argument('--skip_to_final_model', action='store_true')
+    parser.add_argument('--orthogonal_regularization_factor', type=float, default=0.0)
+    parser.add_argument('--base_logdir', type=str, default='./logs')
+
     args = parser.parse_args()
 
     # ---------------------------------------------------------------
@@ -396,9 +366,11 @@ def main():
     HP_LR_SCHED = hp.HParam('lr_scheduler', hp.Discrete(['cos', 'cos_warm_restarts', 'step_decay', 'exp_decay']))
     HP_WEIGHT_DECAY = hp.HParam('weight_decay', hp.RealInterval(1e-6, 1e-2))
     HP_BATCH_SIZE = hp.HParam('batch_size', hp.Discrete([64, 128, 256, 512, 1024]))
+    if args.orthogonal_regularization_factor < 0:
+        HP_ORTHOGONAL_REGULARIZATION_FACTOR = hp.HParam('orthogonal_regularization_factor', hp.RealInterval(1e-4, 1.0))
 
     # Set up a top-level logging directory for all eLink_{args.specific_m} runs
-    top_level_log_dir = f'./logs/eLink_{args.specific_m}'
+    top_level_log_dir = f'{args.base_logdir}/eLink_{args.specific_m}'
     os.makedirs(top_level_log_dir, exist_ok=True)
 
     # Log the hyperparameter configuration once so the HParams plugin knows
