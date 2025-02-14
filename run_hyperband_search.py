@@ -207,6 +207,9 @@ def format_for_autoencoder(wafer, cond):
 # Main Tuning Function
 ##############################################################################
 def run_hyperband(args):
+    # Set a fixed seed for reproducibility
+    seed_value = 42
+    tf.keras.utils.set_random_seed(seed_value)
     # Create output directory
     tuner_dir = os.path.join(args.opath, f'hyperband_search_{args.specific_m}')
     os.makedirs(tuner_dir, exist_ok=True)
@@ -223,24 +226,24 @@ def run_hyperband(args):
         project_name='cae_project',
         overwrite=False
     )
+    if not args.just_write_best_hyperparameters:
+        print('Loading Data...')
+        train_dataset, test_dataset, val_dataset = load_pre_processed_data_for_hyperband(
+            args.num_files, args.specific_m, args
+        )
 
-    print('Loading Data...')
-    train_dataset, test_dataset, val_dataset = load_pre_processed_data_for_hyperband(
-        args.num_files, args.specific_m, args
-    )
+        # Format the datasets for your autoencoder model
+        train_dataset = train_dataset.map(format_for_autoencoder)
+        val_dataset = val_dataset.map(format_for_autoencoder)
 
-    # Format the datasets for your autoencoder model
-    train_dataset = train_dataset.map(format_for_autoencoder)
-    val_dataset = val_dataset.map(format_for_autoencoder)
-
-    print('Sample shapes from training dataset:')
-    for batch in train_dataset.take(1):
-        x_batch, y_batch = batch
-        wafer_input, cond_input = x_batch
-        print(f"Wafer shape: {wafer_input.shape}")   # e.g. (batch_size, 8, 8, 1)
-        print(f"Cond shape: {cond_input.shape}")     # e.g. (batch_size, 8)
-        print(f"Target shape: {y_batch.shape}")      # e.g. (batch_size, 8, 8, 1)
-    print('Data Loaded!')
+        print('Sample shapes from training dataset:')
+        for batch in train_dataset.take(1):
+            x_batch, y_batch = batch
+            wafer_input, cond_input = x_batch
+            print(f"Wafer shape: {wafer_input.shape}")   # e.g. (batch_size, 8, 8, 1)
+            print(f"Cond shape: {cond_input.shape}")     # e.g. (batch_size, 8)
+            print(f"Target shape: {y_batch.shape}")      # e.g. (batch_size, 8, 8, 1)
+        print('Data Loaded!')
 
     # -------------------------------------------------
     # Run the Hyperband search
@@ -283,26 +286,87 @@ def run_hyperband(args):
         for key, value in best_hp.values.items():
             writer.writerow([key, value])
         writer.writerow(['best_val_loss', lowest_loss])
+
     
-    # Train over 20 initial seeds
-    performance_records = []
-    max_epochs = 100
-    with open(os.path.join(final_log_dir, 'performance_records.csv'), 'w') as f:
-        writer = csv.writer(f)
-        writer.writerow(['Seed', 'Validation Loss'])
+    if not args.just_write_best_hyperparameters:
+        # Train over args.num_seeds initial seeds
+        performance_records = []
+        max_epochs = 100
+        performance_file = os.path.join(final_log_dir, 'performance_records.csv')
+        if os.path.exists(performance_file):
+            existing_records = pd.read_csv(performance_file)
+            start_seed = len(existing_records)
+            mode = 'a'  # append mode
+        else:
+            start_seed = 0
+            mode = 'w'  # write mode
 
-        for seed in range(20):
-            # Rebuild the model for each seed to ensure re-initialization
+        with open(performance_file, mode) as f:
+            writer = csv.writer(f)
+            if start_seed == 0:
+                writer.writerow(['Seed', 'Validation Loss'])
+
+            for base_seed in range(start_seed, start_seed + args.num_seeds):
+                seed = base_seed
+                # Rebuild the model for each seed to ensure re-initialization
+                best_model = tuner.hypermodel.build(best_hp)
+                print(f"Training with seed {seed}...")
+                tf.keras.utils.set_random_seed(seed)
+
+                init_lr = best_hp.get("lr")
+                final_cb = [
+                    scheduler_factory(best_hp, init_lr, max_epochs),
+                    TensorBoard(log_dir=os.path.join(final_log_dir, f'seed_{seed}'), update_freq="epoch")
+                ]
+                batch_size = best_hp.get("batch_size")
+                history = best_model.fit(
+                    train_dataset.batch(batch_size),
+                    validation_data=val_dataset.batch(batch_size),
+                    epochs=max_epochs,
+                    callbacks=final_cb,
+                    verbose=1
+                )
+
+                seed_val_loss = np.min(history.history["val_loss"])
+                performance_records.append([seed, seed_val_loss])
+                print(f"Seed {seed} model has val_loss = {seed_val_loss:.4f}")
+
+                # Save the best model weights
+                if seed_val_loss < best_val_loss:
+                    best_val_loss = seed_val_loss
+                    best_model_weights = best_model.get_weights()
+
+                # Write the current seed's performance to the CSV file
+                writer.writerow([seed, seed_val_loss])
+                f.flush()
+
+            # Save the best model found from the search
+            def save_model(model, dir_name, model_name):
+                output_model_dir = os.path.join(tuner_dir, dir_name)
+                os.makedirs(output_model_dir, exist_ok=True)
+                save_models(model, output_model_dir, model_name, isQK=True)
+                print(f"{model_name} saved to: {output_model_dir}")
+
+            save_model(best_model, f'best_model_eLink_{args.specific_m}', 'best_model')
+
+            # Load larger dataset to train final model on larger set
+            print('Loading Larger Final Data...')
+            train_dataset, test_dataset, val_dataset = load_pre_processed_data_for_hyperband(
+                args.num_files, args.specific_m, args, dataset_limit=500_000
+            )
+
+            train_dataset = train_dataset.map(format_for_autoencoder)
+            val_dataset = val_dataset.map(format_for_autoencoder)
+
+            # Rebuild the best model with the best hyperparameters and best initial seed
             best_model = tuner.hypermodel.build(best_hp)
-            print(f"Training with seed {seed}...")
-            tf.keras.utils.set_random_seed(seed)
+            best_model.set_weights(best_model_weights)
 
-            init_lr = best_hp.get("lr")
+            # Train the best model on the larger dataset
             final_cb = [
                 scheduler_factory(best_hp, init_lr, max_epochs),
-                TensorBoard(log_dir=os.path.join(final_log_dir, f'seed_{seed}'), update_freq="epoch")
+                TensorBoard(log_dir=os.path.join(final_log_dir, 'final_training'), update_freq="epoch")
             ]
-            batch_size = best_hp.get("batch_size")
             history = best_model.fit(
                 train_dataset.batch(batch_size),
                 validation_data=val_dataset.batch(batch_size),
@@ -311,32 +375,19 @@ def run_hyperband(args):
                 verbose=1
             )
 
-            seed_val_loss = np.min(history.history["val_loss"])
-            performance_records.append([seed, seed_val_loss])
-            print(f"Seed {seed} model has val_loss = {seed_val_loss:.4f}")
+            final_val_loss = np.min(history.history["val_loss"])
+            print(f"Final model has val_loss = {final_val_loss:.4f}")
 
-            # Save the best model weights
-            if seed_val_loss < best_val_loss:
-                best_val_loss = seed_val_loss
-                best_model_weights = best_model.get_weights()
+            # Save the final best model trained on the larger dataset
+            save_model(best_model, f'final_best_model_eLink_{args.specific_m}', 'final_best_model')
 
-            # Write the current seed's performance to the CSV file
-            writer.writerow([seed, seed_val_loss])
-
-    # Save the best model
-    if best_model_weights is not None:
-        best_model.set_weights(best_model_weights)
-        output_model_dir = os.path.join(tuner_dir, f'best_model_eLink_{args.specific_m}')
-        os.makedirs(output_model_dir, exist_ok=True)
-        save_models(best_model, output_model_dir, 'best_model', isQK=True)
-        print(f"Best model saved to: {output_model_dir}")
-
-    # Save the final best model
-    output_model_dir = os.path.join(tuner_dir, f'best_model_eLink_{args.specific_m}')
-    os.makedirs(output_model_dir, exist_ok=True)
-    save_models(best_model, output_model_dir, 'best_model', isQK=True)
-    print(f"Best model saved to: {output_model_dir}")
-
+            # Save a file showing the val_loss for the seed training and the larger dataset training
+            with open(os.path.join(final_log_dir, 'final_val_loss.csv'), 'w') as f:
+                writer = csv.writer(f)
+                writer.writerow(['Training Phase', 'Validation Loss'])
+                writer.writerow(['Seed Search', best_val_loss])
+                writer.writerow(['Larger Dataset Training', final_val_loss])
+                
 
 ##############################################################################
 # Main
@@ -355,6 +406,8 @@ def main():
     parser.add_argument('--skip_to_final_model', action='store_true')
     parser.add_argument('--orthogonal_regularization_factor', type=float, default=0.0)
     parser.add_argument('--base_logdir', type=str, default='./logs')
+    parser.add_argument('--just_write_best_hyperparameters', action='store_true')
+    parser.add_argument('--num_seeds', type=int, default=20)
 
     args = parser.parse_args()
 
