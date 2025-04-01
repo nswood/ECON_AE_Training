@@ -5,7 +5,7 @@ Base scan
 ----------------------
 python run_hyperband_search.py --opath testing_hyperband --mname search --model_per_eLink --specific_m 5 --num_files 4 --data_path test_data_saving --num_trials 100
 
-python run_hyperband_search.py --opath testing_hyperband --mname search --model_per_eLink --specific_m 5 --num_files 4 --data_path test_data_saving --num_trials 75 
+python run_hyperband_search.py --opath testing_hyperband --mname search --model_per_eLink --specific_m 4 --num_files 4 --data_path test_data_saving --num_trials 75 
 
 python run_hyperband_search.py --opath testing_hyperband --mname search --model_per_eLink --specific_m 3 --num_files 2 --data_path test_data_saving --num_trials 90
 
@@ -53,3 +53,46 @@ python run_hyperband_search.py --opath hyperband_search_orthonorm_regularized_as
 python run_hyperband_search.py --opath hyperband_search_orthonorm_regularized_as_hparam --mname search --model_per_eLink --specific_m 4 --num_files 4 --data_path test_data_saving --base_logdir orthogon_reg_as_hparam_logs --orthogonal_regularization_factor -1 --num_trials 50 --skip_to_final_model --num_seeds 100
 
 python run_hyperband_search.py --opath testing_hyperband --mname search --model_per_eLink --specific_m 5 --num_files 4 --data_path test_data_saving --num_trials 100 --skip_to_final_model --num_seeds 100
+
+
+----------------------------------------
+Running over all scans
+----------------------------------------
+
+----------------------
+
+
+python run_hyperband_search.py --opath testing_hyperband --mname search --model_per_eLink --specific_m 5 --num_files 4 --data_path test_data_saving --num_trials 75 --skip_to_final_model --num_seeds 100
+
+python run_hyperband_search.py --opath testing_hyperband --mname search --model_per_eLink --specific_m 4 --num_files 4 --data_path test_data_saving --num_trials 75 --skip_to_final_model --num_seeds 100
+
+
+python run_hyperband_search.py --opath testing_hyperband --mname search --model_per_eLink --specific_m 3 --num_files 2 --data_path test_data_saving --num_trials 90 --skip_to_final_model --num_seeds 100
+
+python run_hyperband_search.py --opath testing_hyperband --mname search --model_per_eLink --specific_m 2 --num_files 2 --data_path test_data_saving --num_trials 89 --skip_to_final_model --num_seeds 100
+
+----------------------
+
+Fixed ortho
+
+----------------------
+
+python run_hyperband_search.py --opath hyperband_search_orthonorm_regularized --mname search --model_per_eLink --specific_m 5 --num_files 4 --data_path test_data_saving --base_logdir orthogon_reg_logs --orthogonal_regularization_factor 0.01 --num_trials 50 --skip_to_final_model --num_seeds 100
+
+python run_hyperband_search.py --opath hyperband_search_orthonorm_regularized --mname search --model_per_eLink --specific_m 4 --num_files 4 --data_path test_data_saving --base_logdir orthogon_reg_logs --orthogonal_regularization_factor 0.01 --num_trials 50 --skip_to_final_model --num_seeds 100
+
+python run_hyperband_search.py --opath hyperband_search_orthonorm_regularized --mname search --model_per_eLink --specific_m 3 --num_files 2 --data_path test_data_saving --base_logdir orthogon_reg_logs --orthogonal_regularization_factor 0.01 --num_trials 50 --skip_to_final_model --num_seeds 100
+
+
+
+----------------------
+
+Ortho reg as param
+
+----------------------
+
+python run_hyperband_search.py --opath hyperband_search_orthonorm_regularized_as_hparam --mname search --model_per_eLink --specific_m 5 --num_files 4 --data_path test_data_saving --base_logdir orthogon_reg_as_hparam_logs --orthogonal_regularization_factor -1 --num_trials 50 --skip_to_final_model --num_seeds 100
+
+python run_hyperband_search.py --opath hyperband_search_orthonorm_regularized_as_hparam --mname search --model_per_eLink --specific_m 2 --num_files 2 --data_path test_data_saving --base_logdir orthogon_reg_as_hparam_logs --orthogonal_regularization_factor -1 --num_trials 50 --skip_to_final_model --num_seeds 100
+
+

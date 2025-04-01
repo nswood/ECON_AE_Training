@@ -1,0 +1,85 @@
+----------------------
+
+Base scan
+
+----------------------
+python run_hyperband_search.py --opath testing_hyperband --mname search --model_per_eLink --specific_m 5 --num_files 1 --data_path data_no_bias --num_trials 50
+
+python run_hyperband_search.py --opath testing_hyperband --mname search --model_per_eLink --specific_m 4 --num_files 1 --data_path data_no_bias --num_trials 50 
+
+python run_hyperband_search.py --opath testing_hyperband --mname search --model_per_eLink --specific_m 3 --num_files 1 --data_path data_no_bias --num_trials 50
+
+python run_hyperband_search.py --opath testing_hyperband --mname search --model_per_eLink --specific_m 2 --num_files 1 --data_path data_no_bias --num_trials 50 
+
+
+----------------------
+
+Ortho reg as param
+
+----------------------
+
+python run_hyperband_search.py --opath hyperband_search_orthonorm_regularized_as_hparam_no_bias --mname search --model_per_eLink --specific_m 5 --num_files 1 --data_path data_no_bias --base_logdir orthogon_reg_as_hparam_logs_no_bias --orthogonal_regularization_factor -1 --num_trials 50
+
+python run_hyperband_search.py --opath hyperband_search_orthonorm_regularized_as_hparam_no_bias --mname search --model_per_eLink --specific_m 4 --num_files 1 --data_path data_no_bias --base_logdir orthogon_reg_as_hparam_logs_no_bias --orthogonal_regularization_factor -1 --num_trials 50
+
+python run_hyperband_search.py --opath hyperband_search_orthonorm_regularized_as_hparam_no_bias --mname search --model_per_eLink --specific_m 3 --num_files 1 --data_path data_no_bias --base_logdir orthogon_reg_as_hparam_logs_no_bias --orthogonal_regularization_factor -1 --num_trials 50
+
+python run_hyperband_search.py --opath hyperband_search_orthonorm_regularized_as_hparam_no_bias --mname search --model_per_eLink --specific_m 2 --num_files 1 --data_path data_no_bias --base_logdir orthogon_reg_as_hparam_logs_no_bias --orthogonal_regularization_factor -1 --num_trials 50
+
+
+---------------------
+
+
+python run_hyperband_search.py --opath hyperband_search_orthonorm_regularized_as_hparam_no_bias_fixed_norm --mname search --model_per_eLink --specific_m 5 --num_files 1 --data_path data_no_bias_fixed_norm --base_logdir orthogon_reg_as_hparam_logs_no_bias --orthogonal_regularization_factor -1 --num_trials 50
+
+python run_hyperband_search.py --opath hyperband_search_orthonorm_regularized_as_hparam_no_bias_fixed_norm --mname search --model_per_eLink --specific_m 4 --num_files 1 --data_path data_no_bias_fixed_norm --base_logdir orthogon_reg_as_hparam_logs_no_bias --orthogonal_regularization_factor -1 --num_trials 50
+
+python run_hyperband_search.py --opath hyperband_search_orthonorm_regularized_as_hparam_no_bias_fixed_norm --mname search --model_per_eLink --specific_m 3 --num_files 1 --data_path data_no_bias_fixed_norm --base_logdir orthogon_reg_as_hparam_logs_no_bias --orthogonal_regularization_factor -1 --num_trials 50
+
+python run_hyperband_search.py --opath hyperband_search_orthonorm_regularized_as_hparam_no_bias_fixed_norm --mname search --model_per_eLink --specific_m 2 --num_files 1 --data_path data_no_bias_fixed_norm --base_logdir orthogon_reg_as_hparam_logs_no_bias --orthogonal_regularization_factor -1 --num_trials 50
+
+
+
+
+
+----------------------
+----------------------
+
+Running additional seed test for best performing models
+
+python run_hyperband_search.py --opath hyperband_search_orthonorm_regularized --mname search --model_per_eLink --specific_m 2 --num_files 1 --data_path data_no_bias --base_logdir orthogon_reg_logs --orthogonal_regularization_factor 0.01 --num_trials 50 --skip_to_final_model --num_seeds 100
+
+python run_hyperband_search.py --opath hyperband_search_orthonorm_regularized_as_hparam_no_bias --mname search --model_per_eLink --specific_m 3 --num_files 1 --data_path data_no_bias --base_logdir orthogon_reg_as_hparam_logs_no_bias --orthogonal_regularization_factor -1 --num_trials 50 --skip_to_final_model --num_seeds 100
+
+python run_hyperband_search.py --opath hyperband_search_orthonorm_regularized_as_hparam_no_bias --mname search --model_per_eLink --specific_m 4 --num_files 1 --data_path data_no_bias --base_logdir orthogon_reg_as_hparam_logs_no_bias --orthogonal_regularization_factor -1 --num_trials 50 --skip_to_final_model --num_seeds 100
+
+python run_hyperband_search.py --opath testing_hyperband --mname search --model_per_eLink --specific_m 5 --num_files 1 --data_path data_no_bias --num_trials 100 --skip_to_final_model --num_seeds 100
+
+
+----------------------------------------
+Running over all scans
+----------------------------------------
+----------------------
+
+
+python run_hyperband_search.py --opath testing_hyperband --mname search --model_per_eLink --specific_m 5 --num_files 1 --data_path data_no_bias --num_trials 75 --skip_to_final_model --num_seeds 100
+
+python run_hyperband_search.py --opath testing_hyperband --mname search --model_per_eLink --specific_m 4 --num_files 1 --data_path data_no_bias --num_trials 75 --skip_to_final_model --num_seeds 100
+
+
+python run_hyperband_search.py --opath testing_hyperband --mname search --model_per_eLink --specific_m 3 --num_files 1 --data_path data_no_bias --num_trials 90 --skip_to_final_model --num_seeds 100
+
+python run_hyperband_search.py --opath testing_hyperband --mname search --model_per_eLink --specific_m 2 --num_files 1 --data_path data_no_bias --num_trials 89 --skip_to_final_model --num_seeds 100
+
+
+----------------------
+
+Ortho reg as param
+
+----------------------
+
+python run_hyperband_search.py --opath hyperband_search_orthonorm_regularized_as_hparam_no_bias --mname search --model_per_eLink --specific_m 5 --num_files 1 --data_path data_no_bias --base_logdir orthogon_reg_as_hparam_logs_no_bias --orthogonal_regularization_factor -1 --num_trials 50 --skip_to_final_model --num_seeds 100
+
+python run_hyperband_search.py --opath hyperband_search_orthonorm_regularized_as_hparam_no_bias --mname search --model_per_eLink --specific_m 2 --num_files 1 --data_path data_no_bias --base_logdir orthogon_reg_as_hparam_logs_no_bias --orthogonal_regularization_factor -1 --num_trials 50 --skip_to_final_model --num_seeds 100
+
+

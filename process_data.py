@@ -240,6 +240,7 @@ def process_data(files, save_every_n_files, model_info=-1, normalize=True, model
         wafertype_arr = np.array(list(filtered_df['wafertype']))
         sumCALQ_arr = filtered_df['sumCALQ'].to_numpy()
         layer_arr = filtered_df['layer'].to_numpy()
+        layer_arr = (layer_arr -1)/(46); 
         wafer_sim_energy_arr = filtered_df['wafer_sim_energy'].to_numpy()
         wafer_energy_arr = filtered_df['wafer_energy'].to_numpy()  # not used further, but kept
 

@@ -1,0 +1,23 @@
+#!/bin/bash
+
+all_eLinks=(2 3 4 5)
+
+for eLink in "${all_eLinks[@]}"
+do
+  echo "Processing eLink = $eLink"
+
+  python fix_preprocess_CMSSW.py --mname model \
+    --mpath /uscms/home/nswood/nobackup/Notebooks/ECON_QAE_Training/hyperband_search_orthonorm_regularized/hyperband_search_2/best_model_eLink_${eLink} \
+    --outdir hyperband_search_orthonorm_regularized_CMSSW \
+    --eLinks $eLink
+
+  python fix_preprocess_CMSSW.py --mname model \
+    --mpath /uscms/home/nswood/nobackup/Notebooks/ECON_QAE_Training/hyperband_search_orthonorm_regularized_as_hparam/hyperband_search_2/best_model_eLink_${eLink} \
+    --outdir hyperband_search_orthonorm_regularized_as_hparam_CMSSW \
+    --eLinks $eLink
+
+  python fix_preprocess_CMSSW.py --mname model \
+    --mpath /uscms/home/nswood/nobackup/Notebooks/ECON_QAE_Training/base_hyperband_scan/best_model_eLink_${eLink} \
+    --outdir base_hyperband_scan_CMSSW \
+    --eLinks $eLink
+done
