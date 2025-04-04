@@ -3,6 +3,7 @@ import random
 import pickle
 import numpy as np
 import pandas as pd
+from utils.emd_utils import compute_emd
 
 import tensorflow as tf
 
@@ -391,6 +392,8 @@ for m in all_models:
     # Training Loop
     ################################################################
 
+    emd_loss_history = []
+
     for epoch in range(start_epoch, total_epochs + 1):
 
         # Adjust learning rate via the chosen schedule
@@ -409,13 +412,26 @@ for m in all_models:
             loss_batch_val = cae.test_on_batch([wafers, cond_data], wafers)
             total_loss_val += loss_batch_val
 
+        # ----------- EMD Evaluation -------
+        emd_epoch_vals = []
+        for wafers, cond_data in test_loader:
+            y_pred = cae.predict([wafers, cond_data], verbose=0)
+            for i in range(len(wafers)):
+                emd_val = compute_emd(wafers[i].numpy(), y_pred[i], weighted=True) #Weighted EMD
+                emd_epoch_vals.append(emd_val)
+
+        emd_mean_val = np.mean(emd_epoch_vals)
+        #print(f"Epoch {epoch:03d} - EMD Val Loss: {emd_mean_val:.6f}")
+        emd_loss_history.append(emd_mean_val)
+        
         # Average across all batches
         total_loss_train /= len(train_loader)
         total_loss_val   /= len(test_loader)
 
         print(f"Epoch {epoch:03d}, "
               f"Loss: {total_loss_train:.8f}, "
-              f"ValLoss: {total_loss_val:.8f}")
+              f"ValLoss: {total_loss_val:.8f}, "
+              f"EMDLoss: {emd_mean_val:.8f}")
 
         # Log the losses
         loss_dict['train_loss'].append(total_loss_train)
@@ -426,7 +442,8 @@ for m in all_models:
         plt.figure(figsize=(10, 6))
         plt.plot(df_log['train_loss'], label='Training Loss')
         plt.plot(df_log['val_loss'],   label='Validation Loss')
-        plt.title('Training and Validation Loss')
+        plt.plot(emd_loss_history, label='EMD Loss', linestyle='--')
+        plt.title('Training, Validation and EMD Loss')
         plt.xlabel('Epochs')
         plt.ylabel('Loss')
         plt.yscale('log')
@@ -438,6 +455,8 @@ for m in all_models:
 
         # Save CSV log
         df_log.to_csv(f"{model_dir}/df.csv", index=False)
+
+        pd.DataFrame({'emd_loss': emd_loss_history}).to_csv(f"{model_dir}/emd_loss.csv", index=False)
 
         # Save best model
         if total_loss_val < best_val_loss:
