@@ -17,10 +17,208 @@ from collections import Counter
 import utils.graph as graph
 from uuid import uuid4
 from datetime import datetime
+from tensorflow import keras
+from keras.layers import (Layer, Input, Flatten, Dense, ReLU, Reshape,
+                          Conv2DTranspose, concatenate)
+from keras.models import Model
+import qkeras
+from qkeras import QActivation, QConv2D, QDense, quantized_bits
+
+
+from utils.custom_layers import *
+from utils.regularization_layers.regularizers import *
+
+##############################################################################
+# Model Building
+##############################################################################
+
+def build_cae_model(bitsPerOutput, orthogonal_regularization_factor = 0):
+    if orthogonal_regularization_factor > 0:
+        
+        # n_encoded (just an example of an architecture hyperparam you can tune)
+        n_encoded = 16
+
+        # -----------------------------------------------------------
+        # 3) Bits logic from your code
+        # -----------------------------------------------------------
+        nIntegerBits = 1
+        nDecimalBits = bitsPerOutput - nIntegerBits
+        outputSaturationValue = (1 << nIntegerBits) - 1./(1 << nDecimalBits)
+        maxBitsPerOutput = 9
+        outputMaxIntSize = 1 if (bitsPerOutput <= 0) else (1 << nDecimalBits)
+
+        # Additional fixed settings
+        n_kernels = 8
+        conv_weightBits = 6
+        conv_biasBits   = 6
+        dense_weightBits = 6
+        dense_biasBits   = 6
+        encodedBits = 9
+        CNN_kernel_size = 3
+
+        regularizer = tf.keras.regularizers.OrthogonalRegularizer(
+            factor=orthogonal_regularization_factor, mode='rows'
+        )
+
+        de_conv_regularizer = DeconvOrthRegularizer(stride=2, padding='VALID', coeff=orthogonal_regularization_factor)
+
+        # -----------------------------------------------------------
+        # 4) Build Encoder
+        # -----------------------------------------------------------
+        input_enc = Input(shape=(8, 8, 1), name='Wafer')
+        cond      = Input(shape=(8,), name='Cond')
+
+        x = QActivation(quantized_bits(bits=8, integer=1), name='input_quantization')(input_enc)
+        x = keras_pad()(x)
+        x = QConv2D(
+            n_kernels,
+            CNN_kernel_size, 
+            strides=2, 
+            padding='valid',
+            kernel_quantizer=quantized_bits(bits=conv_weightBits, integer=0, keep_negative=1, alpha=1),
+            bias_quantizer=quantized_bits(bits=conv_biasBits,   integer=0, keep_negative=1, alpha=1),
+            name="conv2d",
+            kernel_regularizer=de_conv_regularizer
+        )(x)
+        x = QActivation(quantized_bits(bits=8, integer=1), name='act')(x)
+        x = Flatten()(x)
+        x = QDense(
+            n_encoded,
+            kernel_quantizer=quantized_bits(bits=dense_weightBits, integer=0, keep_negative=1, alpha=1),
+            bias_quantizer=quantized_bits(bits=dense_biasBits,     integer=0, keep_negative=1, alpha=1),
+            name="dense",
+            kernel_regularizer=regularizer
+        )(x)
+
+        latent = QActivation(
+            qkeras.quantized_bits(bits=encodedBits, integer=nIntegerBits),
+            name='latent_quantization'
+        )(x)
+
+        # If bits are allocated, rescale + saturate
+        if bitsPerOutput > 0 and maxBitsPerOutput > 0:
+            latent = keras_floor()(latent * outputMaxIntSize)
+            latent = keras_minimum()(latent / outputMaxIntSize, sat_val=outputSaturationValue)
+
+        # Concatenate condition
+        latent = concatenate([latent, cond], axis=1)
+        encoder = keras.Model([input_enc, cond], latent, name="encoder")
+
+        # -----------------------------------------------------------
+        # 5) Build Decoder
+        # -----------------------------------------------------------
+        input_dec = Input(shape=(24,))
+        y = Dense(24,kernel_regularizer=regularizer)(input_dec)
+        y = ReLU()(y)
+        y = Dense(64,kernel_regularizer=regularizer)(y)
+        y = ReLU()(y)
+        y = Dense(128,kernel_regularizer=regularizer)(y)
+        y = ReLU()(y)
+        y = Reshape((4, 4, 8))(y)
+        y = Conv2DTranspose(1, (3,3), strides=(2,2), padding='valid',kernel_regularizer=de_conv_regularizer)(y)
+        # Crop to 8x8
+        y = y[:, 0:8, 0:8]
+        y = ReLU()(y)
+        decoder = keras.Model([input_dec], y, name="decoder")
+
+        # Full CAE
+        cae = Model(
+            inputs=[input_enc, cond],
+            outputs=decoder([encoder([input_enc, cond])]),
+            name="cae"
+        )
+    else:
+        # n_encoded (just an example of an architecture hyperparam you can tune)
+        n_encoded = 16
+
+        # -----------------------------------------------------------
+        # 3) Bits logic from your code
+        # -----------------------------------------------------------
+        nIntegerBits = 1
+        nDecimalBits = bitsPerOutput - nIntegerBits
+        outputSaturationValue = (1 << nIntegerBits) - 1./(1 << nDecimalBits)
+        maxBitsPerOutput = 9
+        outputMaxIntSize = 1 if (bitsPerOutput <= 0) else (1 << nDecimalBits)
+
+        # Additional fixed settings
+        n_kernels = 8
+        conv_weightBits = 6
+        conv_biasBits   = 6
+        dense_weightBits = 6
+        dense_biasBits   = 6
+        encodedBits = 9
+        CNN_kernel_size = 3
+
+        # -----------------------------------------------------------
+        # 4) Build Encoder
+        # -----------------------------------------------------------
+        input_enc = Input(shape=(8, 8, 1), name='Wafer')
+        cond      = Input(shape=(8,), name='Cond')
+
+        x = QActivation(quantized_bits(bits=8, integer=1), name='input_quantization')(input_enc)
+        x = keras_pad()(x)
+        x = QConv2D(
+            n_kernels,
+            CNN_kernel_size, 
+            strides=2, 
+            padding='valid',
+            kernel_quantizer=quantized_bits(bits=conv_weightBits, integer=0, keep_negative=1, alpha=1),
+            bias_quantizer=quantized_bits(bits=conv_biasBits,   integer=0, keep_negative=1, alpha=1),
+            name="conv2d"
+        )(x)
+        x = QActivation(quantized_bits(bits=8, integer=1), name='act')(x)
+        x = Flatten()(x)
+        x = QDense(
+            n_encoded,
+            kernel_quantizer=quantized_bits(bits=dense_weightBits, integer=0, keep_negative=1, alpha=1),
+            bias_quantizer=quantized_bits(bits=dense_biasBits,     integer=0, keep_negative=1, alpha=1),
+            name="dense"
+        )(x)
+
+        latent = QActivation(
+            qkeras.quantized_bits(bits=encodedBits, integer=nIntegerBits),
+            name='latent_quantization'
+        )(x)
+
+        # If bits are allocated, rescale + saturate
+        if bitsPerOutput > 0 and maxBitsPerOutput > 0:
+            latent = keras_floor()(latent * outputMaxIntSize)
+            latent = keras_minimum()(latent / outputMaxIntSize, sat_val=outputSaturationValue)
+
+        # Concatenate condition
+        latent = concatenate([latent, cond], axis=1)
+        encoder = keras.Model([input_enc, cond], latent, name="encoder")
+
+        # -----------------------------------------------------------
+        # 5) Build Decoder
+        # -----------------------------------------------------------
+        input_dec = Input(shape=(24,))
+        y = Dense(24)(input_dec)
+        y = ReLU()(y)
+        y = Dense(64)(y)
+        y = ReLU()(y)
+        y = Dense(128)(y)
+        y = ReLU()(y)
+        y = Reshape((4, 4, 8))(y)
+        y = Conv2DTranspose(1, (3,3), strides=(2,2), padding='valid')(y)
+        # Crop to 8x8
+        y = y[:, 0:8, 0:8]
+        y = ReLU()(y)
+        decoder = keras.Model([input_dec], y, name="decoder")
+
+        # Full CAE
+        cae = Model(
+            inputs=[input_enc, cond],
+            outputs=decoder([encoder([input_enc, cond])]),
+            name="cae"
+        )
+    return cae
+
 
 ##############################################################################
 # Learning-Rate Schedulers
 ##############################################################################
+
 
 def cos_warm_restarts(epoch, total_epochs, initial_lr):
     """
@@ -301,6 +499,79 @@ def load_pre_processed_data(nfiles, batchsize, bits, args):
     # Separate training & testing files
     train_files = [f for f in files if "train" in f][:nfiles]
     test_files  = [f for f in files if "test"  in f][:nfiles]
+    
+
+    # Combine all training files
+    train_datasets = []
+    for file in train_files:
+        ds = tf.data.experimental.load(os.path.join(data_folder, file))
+        train_datasets.append(ds)
+    train_dataset = train_datasets[0]
+    for ds in train_datasets[1:]:
+        train_dataset = train_dataset.concatenate(ds)
+
+    # Combine all testing files
+    test_datasets = []
+    for file in test_files:
+        ds = tf.data.experimental.load(os.path.join(data_folder, file))
+        print('len ds :',len(list(ds.as_numpy_iterator())))
+        test_datasets.append(ds)
+    test_dataset = test_datasets[0]
+    
+    for ds in test_datasets[1:]:
+        test_dataset = test_dataset.concatenate(ds)
+    print('len test_dataset :',len(list(test_dataset.as_numpy_iterator())))
+    # Optionally subset
+    train_size = args.train_dataset_size
+    val_size = args.val_dataset_size
+    test_size = args.test_dataset_size
+    # print('test_size:',test_size)
+    # Ensure combined train and val size is not larger than the original train_dataset
+    total_train_val_size = train_size + val_size
+    original_train_size = len(train_dataset)
+
+    if total_train_val_size > original_train_size:
+        train_size = int(original_train_size * (train_size / total_train_val_size))
+        val_size = original_train_size - train_size
+
+    train_dataset = train_dataset.take(train_size)
+    val_dataset = train_dataset.skip(train_size).take(val_size)
+
+    # Ensure test size is not larger than the original test_dataset
+    original_test_size = len(list(test_dataset.as_numpy_iterator()))
+    if test_size > original_test_size:
+        test_size = original_test_size
+
+    test_dataset = test_dataset.take(test_size)
+    print('len test_dataset :',len(list(test_dataset.as_numpy_iterator())))
+    # Prepare the data loaders
+    train_loader = train_dataset.batch(batchsize)
+    test_loader  = test_dataset.batch(batchsize)
+    val_loader   = val_dataset.batch(batchsize)
+
+    return train_loader, test_loader, val_loader
+
+
+def load_pre_processed_data_for_hyperband(nfiles, bits, args, dataset_limit = 250_000):
+    """
+    Example data loader. Assumes TFRecord-like datasets are stored under
+    args.data_path with subfolders named 'data_{bits}_eLinks'.
+    
+    Args:
+        nfiles    (int): Number of files to load.
+        batchsize (int): Batch size for training.
+        bits      (int): eLinks or bits parameter for subfolder selection.
+        args    (obj): Object containing dataset paths & sizes (train/val/test).
+    
+    Returns:
+        (train_loader, test_loader, val_loader): tf.data.Dataset objects.
+    """
+    data_folder = os.path.join(args.data_path, f"data_{bits}_eLinks")
+    files = os.listdir(data_folder)
+    
+    # Separate training & testing files
+    train_files = [f for f in files if "train" in f][:nfiles]
+    test_files  = [f for f in files if "test"  in f][:nfiles]
 
     # Combine all training files
     train_datasets = []
@@ -321,35 +592,54 @@ def load_pre_processed_data(nfiles, batchsize, bits, args):
         test_dataset = test_dataset.concatenate(ds)
 
     # Optionally subset
-    train_size = args.train_dataset_size
-    val_size = args.val_dataset_size
-    test_size = args.test_dataset_size
+    total_size = len(list(train_dataset))  # Ensure we get the correct dataset size
 
-    # Ensure combined train and val size is not larger than the original train_dataset
-    total_train_val_size = train_size + val_size
-    original_train_size = len(train_dataset)
+    # Limit dataset size to prevent excessive memory usage
+    total_size = min(total_size, dataset_limit)
 
-    if total_train_val_size > original_train_size:
-        train_size = int(original_train_size * (train_size / total_train_val_size))
-        val_size = original_train_size - train_size
+    train_size = int(0.8 * total_size)
+    val_size = int(0.1 * total_size)
+    test_size = int(0.1 * total_size)
 
-    train_dataset = train_dataset.take(train_size)
-    val_dataset = train_dataset.take(val_size)
+    # Ensure train + val sizes do not exceed available samples
+    if train_size + val_size > total_size:
+        train_size = int(total_size * (train_size / (train_size + val_size)))
+        val_size = total_size - train_size
+
+    # Split datasets properly
+    all_train_dataset = train_dataset
+    all_train_dataset = all_train_dataset.shuffle(buffer_size = total_size, seed=42)
+
+
+    # Assuming total_size is defined
+    buffer_size = total_size  # Adjust based on your memory capacity
+    num_parallel_calls = tf.data.experimental.AUTOTUNE  # Automatically chooses the best number of parallel calls
+
+    all_train_dataset = train_dataset
+    all_train_dataset = all_train_dataset.shuffle(buffer_size=buffer_size, seed=42)
+    all_train_dataset = all_train_dataset.prefetch(buffer_size)
+
+    del train_dataset
+
+    train_dataset = all_train_dataset.take(train_size)
+    val_dataset = all_train_dataset.skip(train_size).take(val_size)
+    
+
+    # Debugging output
+    print('TESTING DATA LOADING')
+    print('Train size:', len(list(train_dataset.as_numpy_iterator())))  # Convert to list to count elements
+    print('Val size:', len(list(val_dataset.as_numpy_iterator())))
 
     # Ensure test size is not larger than the original test_dataset
-    original_test_size = len(test_dataset)
+    original_test_size = tf.data.Dataset.cardinality(test_dataset)
     if test_size > original_test_size:
         test_size = original_test_size
 
     test_dataset = test_dataset.take(test_size)
 
-    # Prepare the data loaders
-    train_loader = train_dataset.batch(batchsize)
-    test_loader  = test_dataset.batch(batchsize)
-    val_loader   = val_dataset.batch(batchsize)
+    
 
-    return train_loader, test_loader, val_loader
-
+    return train_dataset, test_dataset, val_dataset
 ##############################################################################
 # Directory Management
 ##############################################################################
