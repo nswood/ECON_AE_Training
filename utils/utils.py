@@ -499,6 +499,7 @@ def load_pre_processed_data(nfiles, batchsize, bits, args):
     # Separate training & testing files
     train_files = [f for f in files if "train" in f][:nfiles]
     test_files  = [f for f in files if "test"  in f][:nfiles]
+    
 
     # Combine all training files
     train_datasets = []
@@ -513,16 +514,18 @@ def load_pre_processed_data(nfiles, batchsize, bits, args):
     test_datasets = []
     for file in test_files:
         ds = tf.data.experimental.load(os.path.join(data_folder, file))
+        print('len ds :',len(list(ds.as_numpy_iterator())))
         test_datasets.append(ds)
     test_dataset = test_datasets[0]
+    
     for ds in test_datasets[1:]:
         test_dataset = test_dataset.concatenate(ds)
-
+    print('len test_dataset :',len(list(test_dataset.as_numpy_iterator())))
     # Optionally subset
     train_size = args.train_dataset_size
     val_size = args.val_dataset_size
     test_size = args.test_dataset_size
-
+    # print('test_size:',test_size)
     # Ensure combined train and val size is not larger than the original train_dataset
     total_train_val_size = train_size + val_size
     original_train_size = len(train_dataset)
@@ -535,12 +538,12 @@ def load_pre_processed_data(nfiles, batchsize, bits, args):
     val_dataset = train_dataset.skip(train_size).take(val_size)
 
     # Ensure test size is not larger than the original test_dataset
-    original_test_size = len(test_dataset)
+    original_test_size = len(list(test_dataset.as_numpy_iterator()))
     if test_size > original_test_size:
         test_size = original_test_size
 
-    test_dataset = test_dataset.skip(train_size + val_size).take(test_size)
-
+    test_dataset = test_dataset.take(test_size)
+    print('len test_dataset :',len(list(test_dataset.as_numpy_iterator())))
     # Prepare the data loaders
     train_loader = train_dataset.batch(batchsize)
     test_loader  = test_dataset.batch(batchsize)
@@ -549,7 +552,7 @@ def load_pre_processed_data(nfiles, batchsize, bits, args):
     return train_loader, test_loader, val_loader
 
 
-def load_pre_processed_data_for_hyperband(nfiles, bits, args):
+def load_pre_processed_data_for_hyperband(nfiles, bits, args, dataset_limit = 250_000):
     """
     Example data loader. Assumes TFRecord-like datasets are stored under
     args.data_path with subfolders named 'data_{bits}_eLinks'.
@@ -592,7 +595,7 @@ def load_pre_processed_data_for_hyperband(nfiles, bits, args):
     total_size = len(list(train_dataset))  # Ensure we get the correct dataset size
 
     # Limit dataset size to prevent excessive memory usage
-    total_size = min(total_size, 250_000)
+    total_size = min(total_size, dataset_limit)
 
     train_size = int(0.8 * total_size)
     val_size = int(0.1 * total_size)
@@ -628,7 +631,7 @@ def load_pre_processed_data_for_hyperband(nfiles, bits, args):
     print('Val size:', len(list(val_dataset.as_numpy_iterator())))
 
     # Ensure test size is not larger than the original test_dataset
-    original_test_size = len(test_dataset)
+    original_test_size = tf.data.Dataset.cardinality(test_dataset)
     if test_size > original_test_size:
         test_size = original_test_size
 

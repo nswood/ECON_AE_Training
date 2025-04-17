@@ -10,6 +10,7 @@ from tensorflow.keras.callbacks import TensorBoard
 from tensorboard.plugins.hparams import api as hp
 import argparse
 import csv
+from utils.fix_preprocess_CMSSW import save_CMSSW_compatible_model
 
 
 class PrintRegularizationLossesPerBatch(tf.keras.callbacks.Callback):
@@ -214,7 +215,9 @@ def run_hyperband(args):
     tuner_dir = os.path.join(args.opath, f'hyperband_search_{args.specific_m}')
     os.makedirs(tuner_dir, exist_ok=True)
 
-    max_epochs = 50  # The largest bracket for Hyperband
+    # max_epochs = 50   # The largest bracket for Hyperband
+    max_epochs = 2 if args.test_run else 50  # The largest bracket for Hyperband
+
 
     # Create our custom tuner
     tuner = MyHyperband(
@@ -223,10 +226,12 @@ def run_hyperband(args):
         max_epochs=max_epochs,
         factor=3,
         directory=tuner_dir,
-        project_name='cae_project',
+        project_name='cae_hyperband_base_dir',
         overwrite=False
     )
     if not args.just_write_best_hyperparameters:
+        if args.test_run:
+            args.num_files = 1
         print('Loading Data...')
         train_dataset, test_dataset, val_dataset = load_pre_processed_data_for_hyperband(
             args.num_files, args.specific_m, args
@@ -250,7 +255,7 @@ def run_hyperband(args):
     # Note: We pass the 'base_log_dir' so each trial
     # can log to its own subdirectory for TensorBoard.
     # -------------------------------------------------
-    log_dir = f'./{args.base_logdir}/eLink_{args.specific_m}'
+    log_dir = f'{args.opath}/hyperband_search_{args.specific_m}/log'
     if not args.skip_to_final_model:
         tuner.search(
             train_dataset,
@@ -260,7 +265,8 @@ def run_hyperband(args):
         )
     else:
         print('Skipping to final model training...')
-    
+    if args.test_run:
+        args.num_trials = 2
     # Retrieve the best hyperparams
     best_hp = tuner.get_best_hyperparameters(num_trials=args.num_trials)[0]
     print("Best Hyperparameters:", best_hp.values)
@@ -270,10 +276,6 @@ def run_hyperband(args):
     # Build the best model
     best_model = tuner.hypermodel.build(best_hp)
 
-    # -------------------------------------------------
-    # Optional: Re-train the best model in a 'final' run
-    # and log that training to TensorBoard as well.
-    # -------------------------------------------------
     final_log_dir = os.path.join(log_dir, 'final')
     os.makedirs(final_log_dir, exist_ok=True)
 
@@ -291,7 +293,9 @@ def run_hyperband(args):
     if not args.just_write_best_hyperparameters:
         # Train over args.num_seeds initial seeds
         performance_records = []
-        max_epochs = 100
+        max_epochs = 2 if args.test_run else 100
+        args.num_seeds = 2 if args.test_run else args.num_seeds
+        
         performance_file = os.path.join(final_log_dir, 'performance_records.csv')
         if os.path.exists(performance_file):
             existing_records = pd.read_csv(performance_file)
@@ -333,6 +337,7 @@ def run_hyperband(args):
 
                 # Save the best model weights
                 if seed_val_loss < best_val_loss:
+                    best_seed = seed
                     best_val_loss = seed_val_loss
                     best_model_weights = best_model.get_weights()
 
@@ -347,17 +352,38 @@ def run_hyperband(args):
                 save_models(model, output_model_dir, model_name, isQK=True)
                 print(f"{model_name} saved to: {output_model_dir}")
 
-            save_model(best_model, f'best_model_eLink_{args.specific_m}', 'best_model')
+            # Write best seed
+            with open(os.path.join(final_log_dir, 'best_hyperparameters.csv'), 'a') as f:
+                writer = csv.writer(f)
+                writer.writerow(['best_seed', best_seed])
+                writer.writerow(['best_seed_val_loss', best_val_loss])
+                
+            save_model(best_model, f'best_model_eLink_{args.specific_m}_post_seed_variation', 'model')
+
+            save_CMSSW_compatible_model(
+                mname=args.mname,
+                mpath=os.path.join(tuner_dir, f'best_model_eLink_{args.specific_m}_post_seed_variation'),
+                outdir=os.path.join(tuner_dir, f'best_model_eLink_{args.specific_m}_post_seed_variation_for_CMSSW'),
+                eLinks=args.specific_m,
+                alloc_geom=None
+            )
 
             # Load larger dataset to train final model on larger set
             print('Loading Larger Final Data...')
-            train_dataset, test_dataset, val_dataset = load_pre_processed_data_for_hyperband(
-                args.num_files, args.specific_m, args, dataset_limit=500_000
-            )
+            if args.test_run:
+                train_dataset, test_dataset, val_dataset = load_pre_processed_data_for_hyperband(
+                    args.num_files, args.specific_m, args, dataset_limit=25_000
+                )
+            else:
+                train_dataset, test_dataset, val_dataset = load_pre_processed_data_for_hyperband(
+                    args.num_files, args.specific_m, args, dataset_limit=500_000
+                )
+            
 
             train_dataset = train_dataset.map(format_for_autoencoder)
             val_dataset = val_dataset.map(format_for_autoencoder)
 
+            tf.keras.utils.set_random_seed(best_seed)
             # Rebuild the best model with the best hyperparameters and best initial seed
             best_model = tuner.hypermodel.build(best_hp)
             best_model.set_weights(best_model_weights)
@@ -379,7 +405,7 @@ def run_hyperband(args):
             print(f"Final model has val_loss = {final_val_loss:.4f}")
 
             # Save the final best model trained on the larger dataset
-            save_model(best_model, f'final_best_model_eLink_{args.specific_m}', 'final_best_model')
+            save_model(best_model, f'best_model_eLink_{args.specific_m}_post_seed_variation_larger_dataset', 'model')
 
             # Save a file showing the val_loss for the seed training and the larger dataset training
             with open(os.path.join(final_log_dir, 'final_val_loss.csv'), 'w') as f:
@@ -387,6 +413,15 @@ def run_hyperband(args):
                 writer.writerow(['Training Phase', 'Validation Loss'])
                 writer.writerow(['Seed Search', best_val_loss])
                 writer.writerow(['Larger Dataset Training', final_val_loss])
+            
+            # Process best model into CMSSW
+            save_CMSSW_compatible_model(
+                mname=args.mname,
+                mpath=os.path.join(tuner_dir, f'best_model_eLink_{args.specific_m}_post_seed_variation_larger_dataset'),
+                outdir=os.path.join(tuner_dir, f'best_model_eLink_{args.specific_m}_post_seed_variation_larger_dataset_for_CMSSW'),
+                eLinks=args.specific_m,
+                alloc_geom=None
+            )
                 
 
 ##############################################################################
@@ -404,8 +439,8 @@ def main():
     parser.add_argument('--data_path', type=str, default='data')
     parser.add_argument('--num_trials', type=int, default=50)
     parser.add_argument('--skip_to_final_model', action='store_true')
+    parser.add_argument('--test_run', action='store_true')
     parser.add_argument('--orthogonal_regularization_factor', type=float, default=0.0)
-    parser.add_argument('--base_logdir', type=str, default='./logs')
     parser.add_argument('--just_write_best_hyperparameters', action='store_true')
     parser.add_argument('--num_seeds', type=int, default=20)
 
@@ -423,7 +458,7 @@ def main():
         HP_ORTHOGONAL_REGULARIZATION_FACTOR = hp.HParam('orthogonal_regularization_factor', hp.RealInterval(1e-4, 1.0))
 
     # Set up a top-level logging directory for all eLink_{args.specific_m} runs
-    top_level_log_dir = f'{args.base_logdir}/eLink_{args.specific_m}'
+    top_level_log_dir = f'{args.opath}/hyperband_search_{args.specific_m}/log'
     os.makedirs(top_level_log_dir, exist_ok=True)
 
     # Log the hyperparameter configuration once so the HParams plugin knows
