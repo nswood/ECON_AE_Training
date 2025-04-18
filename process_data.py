@@ -215,6 +215,7 @@ def process_data(files, save_every_n_files, model_info=-1, normalize=True, model
         filtered_df.loc[:, 'eta'] = filtered_df['eta'] / 3.1
         filtered_df.loc[:, 'v'] = filtered_df['v'] / 12
         filtered_df.loc[:, 'u'] = filtered_df['u'] / 12
+        filtered_df.loc[:, 'layer'] = (filtered_df['layer'] - 1) / 46
 
         # One-hot encode wafertype
         temp = filtered_df['wafertype'].astype(int).to_numpy()
